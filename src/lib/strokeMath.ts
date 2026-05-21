@@ -1,5 +1,9 @@
 export const GLYPH_UPM = 1000;
 
+// Where the baseline sits inside the 1000-unit canvas (78% from the top).
+// Used by DrawingCanvas to draw the guide and by FontPreview to align rendered glyphs.
+export const GLYPH_BASELINE_RATIO = 0.78;
+
 export type StrokePoint = {
   x: number;
   y: number;

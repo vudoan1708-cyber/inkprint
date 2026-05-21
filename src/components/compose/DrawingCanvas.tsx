@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import {
+  GLYPH_BASELINE_RATIO,
   GLYPH_UPM,
   strokesToSvgPath,
   synthesisePressure,
@@ -39,7 +40,6 @@ export type DrawingCanvasHandle = {
 
 type Props = {
   ghostChar: string;
-  baselineRatio?: number;
   initialStrokes?: Stroke[] | null;
   tool?: CanvasTool;
   onStrokesChange?: (strokes: readonly Stroke[]) => void;
@@ -133,7 +133,6 @@ function resolvePressure(
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function DrawingCanvas(
   {
     ghostChar,
-    baselineRatio = 0.78,
     initialStrokes,
     tool = 'draw',
     onStrokesChange,
@@ -466,7 +465,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
     else endDraw();
   };
 
-  const baselinePercent = baselineRatio * 100;
+  const baselinePercent = GLYPH_BASELINE_RATIO * 100;
 
   return (
     <div
