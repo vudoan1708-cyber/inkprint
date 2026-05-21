@@ -31,6 +31,7 @@ describe('GET /api/glyphs', () => {
             svg_path: 'M 100 100 L 200 200 Z',
             width: 500,
             quality: 0.9,
+            strokes: [[{ x: 100, y: 100, pressure: 0.5 }]],
             updated_at: '2026-05-21T00:00:00Z',
           },
           {
@@ -38,6 +39,7 @@ describe('GET /api/glyphs', () => {
             svg_path: 'M 0 0 L 50 50 Z',
             width: 400,
             quality: null,
+            strokes: null,
             updated_at: '2026-05-21T00:01:00Z',
           },
         ],
@@ -60,6 +62,7 @@ describe('GET /api/glyphs', () => {
             svgPath: 'M 100 100 L 200 200 Z',
             width: 500,
             quality: 0.9,
+            strokes: [[{ x: 100, y: 100, pressure: 0.5 }]],
             updatedAt: '2026-05-21T00:00:00Z',
           },
           {
@@ -67,6 +70,7 @@ describe('GET /api/glyphs', () => {
             svgPath: 'M 0 0 L 50 50 Z',
             width: 400,
             quality: null,
+            strokes: null,
             updatedAt: '2026-05-21T00:01:00Z',
           },
         ],

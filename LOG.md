@@ -6,6 +6,33 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-21 — Defer real user accounts until the marketplace; v1 stays anonymous
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** First Save Glyph attempt failed with `glyphs_user_id_fkey` — the schema had `glyphs.user_id references auth.users(id)`, but the client mints an opaque UUID in localStorage and never authenticates.
+
+**Context**
+
+The migration in `00002_reset_to_per_user_glyph_model.sql` was written assuming Supabase Auth would be wired up at the same time. It wasn't — the product decision throughout v1 has been "anonymous UUID per user, no sign-in friction." The FK to `auth.users` was a latent bug waiting for the first save.
+
+**Decision**
+
+Drop the FK from `glyphs.user_id` and `fonts.user_id` to `auth.users(id)`. `user_id` stays a free-floating UUID owned by the client. Real accounts arrive when the marketplace concept does — at that point users gain a reason to claim/sign in (publishing, selling, syncing across devices) and we can backfill identity onto the existing UUIDs via a migration.
+
+**Rationale**
+
+- **Removes the only blocker on save.** Anonymous use is the v1 onboarding promise.
+- **No premature auth.** Adding sign-in now buys nothing the marketplace doesn't pay for later.
+- **Migration path is open.** When marketplace arrives, we can introduce a `users` (or `auth.users`) row per existing client UUID and re-introduce the FK without rewriting glyph storage.
+
+**Impact**
+
+- Migration: `00004_drop_user_fk_for_anonymous_users.sql` drops both constraints.
+- RLS policies on `glyphs`/`fonts` (`auth.uid() = user_id`) are left in place but inert — the API uses the service-role admin client which bypasses RLS. When real auth lands, the policies start protecting data without further work.
+
+---
+
 ## 2026-05-21 — Long-term vision: differentiators vs Calligraphr (three pillars + supporting ideas)
 
 **Status:** Proposed

@@ -12,6 +12,7 @@ import { cn } from '@/lib/cn';
 
 export type DrawingCanvasHandle = {
   getSvgPath: () => string;
+  getStrokes: () => Stroke[];
   isEmpty: () => boolean;
   undo: () => void;
   clear: () => void;
@@ -20,6 +21,7 @@ export type DrawingCanvasHandle = {
 type Props = {
   ghostChar: string;
   baselineRatio?: number;
+  initialStrokes?: Stroke[] | null;
   onStrokesChange?: (strokes: readonly Stroke[]) => void;
   className?: string;
 };
@@ -48,12 +50,12 @@ function resolvePressure(
 }
 
 export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function DrawingCanvas(
-  { ghostChar, baselineRatio = 0.78, onStrokesChange, className },
+  { ghostChar, baselineRatio = 0.78, initialStrokes, onStrokesChange, className },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const strokesRef = useRef<Stroke[]>([]);
+  const strokesRef = useRef<Stroke[]>(initialStrokes ? [...initialStrokes] : []);
   const activeStrokeRef = useRef<StrokePoint[] | null>(null);
   const lastEventTimeRef = useRef<number>(0);
   const [, forceRender] = useState(0);
@@ -89,6 +91,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
 
   useImperativeHandle(ref, () => ({
     getSvgPath: () => strokesToSvgPath(strokesRef.current),
+    getStrokes: () => strokesRef.current.map((s) => s.map((p) => ({ ...p }))),
     isEmpty: () => strokesRef.current.length === 0,
     undo: () => {
       strokesRef.current = strokesRef.current.slice(0, -1);

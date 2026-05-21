@@ -1,8 +1,11 @@
+import type { Stroke } from '@/lib/strokeMath';
+
 export type GlyphRecord = {
   codePoint: number;
   svgPath: string;
   width: number;
   quality: number | null;
+  strokes: Stroke[] | null;
   updatedAt: string;
 };
 
@@ -31,6 +34,7 @@ export async function upsertGlyph(input: {
   svgPath: string;
   width: number;
   quality?: number;
+  strokes?: Stroke[];
 }): Promise<void> {
   const { codePoint, ...body } = input;
   const res = await fetch(`/api/glyphs/${codePoint}`, {

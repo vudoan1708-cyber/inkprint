@@ -4,16 +4,23 @@ import { useEffect, useRef, useState } from 'react';
 import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
-import { GLYPH_UPM } from '@/lib/strokeMath';
+import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 
 type Props = {
   codePoint: number;
   hasExistingGlyph: boolean;
-  onSave: (svgPath: string) => Promise<void>;
+  initialStrokes: Stroke[] | null;
+  onSave: (svgPath: string, strokes: Stroke[]) => Promise<void>;
   onClose: () => void;
 };
 
-export function DrawingModal({ codePoint, hasExistingGlyph, onSave, onClose }: Props) {
+export function DrawingModal({
+  codePoint,
+  hasExistingGlyph,
+  initialStrokes,
+  onSave,
+  onClose,
+}: Props) {
   const canvasRef = useRef<DrawingCanvasHandle | null>(null);
   const [strokeCount, setStrokeCount] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -37,15 +44,17 @@ export function DrawingModal({ codePoint, hasExistingGlyph, onSave, onClose }: P
   }, [onClose]);
 
   const handleSave = async (): Promise<void> => {
-    const path = canvasRef.current?.getSvgPath() ?? '';
-    if (!path) {
+    const handle = canvasRef.current;
+    const path = handle?.getSvgPath() ?? '';
+    const strokes = handle?.getStrokes() ?? [];
+    if (!path || strokes.length === 0) {
       setErrorMessage('Draw the glyph before saving.');
       return;
     }
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onSave(path);
+      await onSave(path, strokes);
       onClose();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save glyph.');
@@ -93,6 +102,7 @@ export function DrawingModal({ codePoint, hasExistingGlyph, onSave, onClose }: P
             <DrawingCanvas
               ref={canvasRef}
               ghostChar={character}
+              initialStrokes={initialStrokes}
               onStrokesChange={(strokes) => setStrokeCount(strokes.length)}
               className="mx-auto aspect-square w-full max-h-[calc(100dvh-260px)] sm:max-h-[60vh]"
             />

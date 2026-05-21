@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { CHARACTER_SETS, type CharacterSetKey } from '@/lib/characterSets';
 import { useUserId } from '@/lib/userId';
-import { GLYPH_UPM } from '@/lib/strokeMath';
+import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 import { listGlyphs, upsertGlyph, type GlyphRecord } from '@/lib/apiClient';
 import { GlyphGrid } from './GlyphGrid';
 import { DrawingModal } from './DrawingModal';
@@ -19,6 +19,7 @@ type LoadState = 'pending' | 'loaded' | 'error';
 export function InkprintApp() {
   const { userId, error: userIdError } = useUserId();
   const [glyphsByCodePoint, setGlyphsByCodePoint] = useState<Map<number, string>>(new Map());
+  const [strokesByCodePoint, setStrokesByCodePoint] = useState<Map<number, Stroke[]>>(new Map());
   const [loadState, setLoadState] = useState<LoadState>('pending');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedSetKey, setSelectedSetKey] = useState<CharacterSetKey>('latin-basic');
@@ -33,6 +34,7 @@ export function InkprintApp() {
       .then((glyphs) => {
         if (cancelled) return;
         setGlyphsByCodePoint(buildGlyphMap(glyphs));
+        setStrokesByCodePoint(buildStrokeMap(glyphs));
         setLoadState('loaded');
       })
       .catch((error: unknown) => {
@@ -50,17 +52,23 @@ export function InkprintApp() {
     [characterSet, glyphsByCodePoint],
   );
 
-  const handleSaveGlyph = async (svgPath: string): Promise<void> => {
+  const handleSaveGlyph = async (svgPath: string, strokes: Stroke[]): Promise<void> => {
     if (!userId || activeCodePoint === null) return;
     await upsertGlyph({
       userId,
       codePoint: activeCodePoint,
       svgPath,
       width: GLYPH_UPM,
+      strokes,
     });
     setGlyphsByCodePoint((previous) => {
       const next = new Map(previous);
       next.set(activeCodePoint, svgPath);
+      return next;
+    });
+    setStrokesByCodePoint((previous) => {
+      const next = new Map(previous);
+      next.set(activeCodePoint, strokes);
       return next;
     });
   };
@@ -147,6 +155,7 @@ export function InkprintApp() {
         <DrawingModal
           codePoint={activeCodePoint}
           hasExistingGlyph={glyphsByCodePoint.has(activeCodePoint)}
+          initialStrokes={strokesByCodePoint.get(activeCodePoint) ?? null}
           onSave={handleSaveGlyph}
           onClose={() => setActiveCodePoint(null)}
         />
@@ -218,6 +227,14 @@ function DiagnosticFooter({
 function buildGlyphMap(glyphs: readonly GlyphRecord[]): Map<number, string> {
   const map = new Map<number, string>();
   for (const glyph of glyphs) map.set(glyph.codePoint, glyph.svgPath);
+  return map;
+}
+
+function buildStrokeMap(glyphs: readonly GlyphRecord[]): Map<number, Stroke[]> {
+  const map = new Map<number, Stroke[]>();
+  for (const glyph of glyphs) {
+    if (glyph.strokes) map.set(glyph.codePoint, glyph.strokes);
+  }
   return map;
 }
 
