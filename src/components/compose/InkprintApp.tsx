@@ -13,8 +13,11 @@ import { GenerateFontSection } from './GenerateFontSection';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
+import { Tabs } from '@/components/ui/Tabs';
+import { cn } from '@/lib/cn';
 
 type LoadState = 'pending' | 'loaded' | 'error';
+type MobileTab = 'draw' | 'preview';
 
 export function InkprintApp() {
   const { userId, error: userIdError } = useUserId();
@@ -24,6 +27,7 @@ export function InkprintApp() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedSetKey, setSelectedSetKey] = useState<CharacterSetKey>('latin-basic');
   const [activeCodePoint, setActiveCodePoint] = useState<number | null>(null);
+  const [mobileTab, setMobileTab] = useState<MobileTab>('draw');
 
   const characterSet = CHARACTER_SETS[selectedSetKey];
 
@@ -103,29 +107,56 @@ export function InkprintApp() {
         </p>
       </header>
 
-      <section aria-labelledby="character-set-heading" className="flex flex-col gap-3">
+      <Tabs
+        ariaLabel="View"
+        options={[
+          { value: 'draw', label: 'Draw' },
+          { value: 'preview', label: 'Preview' },
+        ]}
+        value={mobileTab}
+        onChange={setMobileTab}
+        className="self-start sm:hidden"
+      />
+
+      <section
+        aria-labelledby="character-set-heading"
+        className={cn(
+          'flex flex-col gap-3',
+          mobileTab === 'draw' ? '' : 'hidden sm:flex',
+        )}
+      >
         <h2 id="character-set-heading" className="text-sm font-medium text-surface-700 dark:text-surface-200">
           Character set
         </h2>
         <CharacterSetPicker selectedKey={selectedSetKey} onSelect={setSelectedSetKey} />
       </section>
 
-      <ProgressBar
-        label={characterSet.label}
-        value={drawnInCurrentSet}
-        max={characterSet.codePoints.length}
-        valueText={`${drawnInCurrentSet} / ${characterSet.codePoints.length}`}
-      />
-
-      <LoadStateBoundary loadState={loadState} loadError={loadError}>
-        <GlyphGrid
-          codePoints={characterSet.codePoints}
-          glyphsByCodePoint={glyphsByCodePoint}
-          onSelect={setActiveCodePoint}
+      <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
+        <ProgressBar
+          label={characterSet.label}
+          value={drawnInCurrentSet}
+          max={characterSet.codePoints.length}
+          valueText={`${drawnInCurrentSet} / ${characterSet.codePoints.length}`}
         />
-      </LoadStateBoundary>
+      </div>
 
-      <section aria-labelledby="preview-heading" className="flex flex-col gap-3">
+      <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
+        <LoadStateBoundary loadState={loadState} loadError={loadError}>
+          <GlyphGrid
+            codePoints={characterSet.codePoints}
+            glyphsByCodePoint={glyphsByCodePoint}
+            onSelect={setActiveCodePoint}
+          />
+        </LoadStateBoundary>
+      </div>
+
+      <section
+        aria-labelledby="preview-heading"
+        className={cn(
+          'flex flex-col gap-3',
+          mobileTab === 'preview' ? '' : 'hidden sm:flex',
+        )}
+      >
         <h2
           id="preview-heading"
           className="text-sm font-medium text-surface-700 dark:text-surface-200"
@@ -137,7 +168,13 @@ export function InkprintApp() {
         </div>
       </section>
 
-      <section aria-labelledby="generate-heading" className="flex flex-col gap-3">
+      <section
+        aria-labelledby="generate-heading"
+        className={cn(
+          'flex flex-col gap-3',
+          mobileTab === 'draw' ? '' : 'hidden sm:flex',
+        )}
+      >
         <h2
           id="generate-heading"
           className="text-sm font-medium text-surface-700 dark:text-surface-200"

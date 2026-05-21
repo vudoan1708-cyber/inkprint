@@ -7,6 +7,7 @@ export const strokePointSchema = z.object({
   x: z.number().finite().min(-100).max(2000),
   y: z.number().finite().min(-100).max(2000),
   pressure: z.number().min(0).max(1),
+  isAnchor: z.boolean().optional(),
 });
 
 export const strokeSchema = z.array(strokePointSchema).max(2000);

@@ -1,9 +1,14 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { DrawingCanvas, type DrawingCanvasHandle } from './DrawingCanvas';
+import {
+  DrawingCanvas,
+  type CanvasTool,
+  type DrawingCanvasHandle,
+} from './DrawingCanvas';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
+import { Tabs } from '@/components/ui/Tabs';
 import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 
 type Props = {
@@ -22,12 +27,15 @@ export function DrawingModal({
   onClose,
 }: Props) {
   const canvasRef = useRef<DrawingCanvasHandle | null>(null);
-  const [strokeCount, setStrokeCount] = useState(0);
+  const [strokeCount, setStrokeCount] = useState(initialStrokes?.length ?? 0);
+  const [tool, setTool] = useState<CanvasTool>('draw');
+  const [canUndo, setCanUndo] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
   const character = String.fromCodePoint(codePoint);
+  const hasStrokes = strokeCount > 0;
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -103,7 +111,13 @@ export function DrawingModal({
               ref={canvasRef}
               ghostChar={character}
               initialStrokes={initialStrokes}
-              onStrokesChange={(strokes) => setStrokeCount(strokes.length)}
+              tool={tool}
+              onStrokesChange={(strokes) => {
+                setStrokeCount(strokes.length);
+                // Move tool requires something to move; bounce back to Draw if everything's gone.
+                if (strokes.length === 0) setTool('draw');
+              }}
+              onCanUndoChange={setCanUndo}
               className="mx-auto aspect-square w-full max-h-[calc(100dvh-260px)] sm:max-h-[60vh]"
             />
 
@@ -114,18 +128,29 @@ export function DrawingModal({
             ) : null}
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Tabs
+                  ariaLabel="Canvas tool"
+                  options={[
+                    { value: 'draw', label: 'Draw' },
+                    { value: 'edit', label: 'Edit', disabled: !hasStrokes },
+                  ]}
+                  value={tool}
+                  onChange={setTool}
+                />
                 <Button
                   variant="secondary"
+                  size="sm"
                   onClick={() => canvasRef.current?.undo()}
-                  disabled={strokeCount === 0}
+                  disabled={!canUndo}
                 >
                   Undo
                 </Button>
                 <Button
                   variant="secondary"
+                  size="sm"
                   onClick={() => canvasRef.current?.clear()}
-                  disabled={strokeCount === 0}
+                  disabled={!hasStrokes}
                 >
                   Clear
                 </Button>
@@ -138,14 +163,16 @@ export function DrawingModal({
                   variant="primary"
                   onClick={handleSave}
                   isLoading={isSaving}
-                  disabled={strokeCount === 0}
+                  disabled={!hasStrokes}
                 >
                   {isSaving ? 'Saving' : 'Save glyph'}
                 </Button>
               </div>
             </div>
             <p className="text-xs text-surface-400">
-              Use a stylus or finger for best results. Path is normalised to a {GLYPH_UPM}-unit em.
+              {tool === 'edit'
+                ? 'Tap a stroke to drop an anchor, then drag it (or any existing anchor) to reshape.'
+                : `Use a stylus or finger for best results. Path is normalised to a ${GLYPH_UPM}-unit em.`}
             </p>
           </div>
         </div>
