@@ -195,7 +195,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
           dominantBaseline="alphabetic"
           fontFamily="serif"
           fontSize={GHOST_FONT_SIZE}
-          className="fill-surface-400 sm:fill-surface-700"
+          className="fill-surface-200 dark:fill-surface-700"
         >
           {ghostChar}
         </text>

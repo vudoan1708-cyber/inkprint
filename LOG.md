@@ -6,6 +6,99 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-21 — Long-term vision: differentiators vs Calligraphr (three pillars + supporting ideas)
+
+**Status:** Proposed
+**Owner:** Vu Doan
+**Trigger:** Brainstorm — defining what makes InkPrint a category-defining product instead of a Calligraphr re-skin. None of this is v1 scope; it is the long-term vision that shapes data model, infra, and brand from day one so v1 doesn't paint us into a corner.
+
+**Context**
+
+Calligraphr (the incumbent handwriting-font tool) is a closed-loop tracing service: print template → handwrite every character → upload scan → get a font containing exactly the characters you drew. It has been on the market ~10 years and dominates the category. To win, InkPrint cannot be "Calligraphr with a nicer UI" — it needs structural advantages Calligraphr cannot match without re-architecting their product.
+
+The earlier 2026-05-20 decision to drop print/scan and capture vector strokes directly is already a structural advantage (clean source data with pressure / velocity / stroke order — not a rastered scan). The three pillars below build on that foundation.
+
+**Decision (proposed)**
+
+InkPrint commits to three differentiating pillars beyond Calligraphr parity.
+
+### Pillar 1 — AI style inference (write less, get more)
+
+Calligraphr requires the user to draw every glyph that ends up in the font. To get a 400-character font you draw 400 cells.
+
+InkPrint asks the user to draw a minimal seed set (A–Z, a–z, 0–9 ≈ 62 cells) and uses a model to *infer* the rest of the character set in the same style:
+
+- Accented Latin (é, ñ, ü, ã, ç, …)
+- Punctuation, currency, math symbols
+- Vietnamese diacritics (ă, â, đ + tone-marked vowels)
+- Cyrillic / Greek extensions for users who want them
+- **Ligatures + cursive joins.** Generate connecting strokes between letters (OpenType `liga`, `clig`, contextual joins) so words flow like real handwriting — not 26 isolated letterforms stitched together. Calligraphr makes you manually draw every ligature pair (`th`, `ti`, `fi`, `ll`, …); AI inference synthesises them from the base alphabet, including end-of-letter exit strokes that meet the next glyph's entry stroke cleanly.
+- **Stylistic alternates** (`calt`, `salt`) — multiple natural variants per glyph so the same letter doesn't repeat identically inside a word.
+
+**Pitch:** "Write 62 characters. Get a font with 300+, in your hand — with ligatures, alternates, and the wobble that makes it feel hand-written."
+
+**Why this is a moat:** the model needs vector-stroke training data with pressure, velocity, and stroke order — exactly what InkPrint captures because v1 uses canvas pointer events. Calligraphr only has rastered scans; even if they bolted on inference, they'd be inferring from worse input.
+
+### Pillar 2 — Mobile keyboard (your font is your identity)
+
+The browser extension already differentiates v1 (your handwriting renders on every website). The natural extension is iOS / Android keyboards (custom IME) so messages in WhatsApp, iMessage, Instagram DMs, Notes, Gmail mobile, etc. type in your handwriting.
+
+**Why this matters:** a downloadable font sits in a folder. A keyboard makes the font part of how the user communicates every day. The product surface shifts from "tool you used once" to "identity you carry."
+
+### Pillar 3 — Social layer (the platform play)
+
+Today fonts are private artifacts. Pillar 3 is a public font directory: users opt in to publish their handwriting; others browse, preview, and install with one click. Think Google Fonts where every font is someone's actual handwriting.
+
+**Why this matters:**
+
+- **Discovery** — shareable URLs (`inkprint.app/u/vu`) become the marketing channel.
+- **Network effects** — every published font attracts viewers who want their own.
+- **Monetisation lever** — creators can charge for premium fonts; platform takes a cut. Business model shifts from one-time purchase to marketplace.
+- **Defensibility** — the library *becomes* the product. A new entrant has features; InkPrint has a library of N thousand handwriting samples.
+
+### Supporting ideas (added during brainstorm)
+
+These extend the three pillars and are worth capturing now even if not pursued:
+
+- **Variable-font axes for ink behaviour.** Ship a single font file with axes for ink saturation, pen pressure, paper grain (fountain-pen-wet vs ballpoint-dry). Same handwriting, different moods. Calligraphr exports flat black vectors only.
+- **Versioned handwriting over time.** Snapshot fonts every N months — "Vu 2025", "Vu 2026". The extension / keyboard can interleave snapshots to simulate natural drift so output never looks mechanically uniform.
+- **Multi-modal export.** Beyond OTF/TTF: SVG sticker packs, Procreate brushes, PencilKit-compatible strokes, Lottie animated writing. Each format opens a new distribution channel.
+- **Public render API.** Third-party apps (greeting cards, journaling, productivity tools) call `inkprint.app/api/render?user=vu&text=hello` and get back a PNG/SVG in that user's hand. Turns InkPrint into infrastructure.
+- **Shared / collaborative fonts.** Multiple users (couple, family, classroom) contribute glyphs to a single shared font. Whimsical, viral, hard to replicate.
+
+**Rationale**
+
+Each pillar gives InkPrint something Calligraphr cannot copy without re-architecting:
+
+| Pillar | Calligraphr can't easily copy because… |
+|---|---|
+| AI inference (incl. ligatures) | Their input is rasters, not vectors with pressure / order data. Ligature synthesis especially needs stroke-direction signal. |
+| Mobile keyboard | They are a B2C font generator, not an app developer; no iOS / Android engineering shown. |
+| Social layer | Their product is built around the individual download flow; no profile / discovery / payments infrastructure. |
+
+The pillars also reinforce each other: AI inference produces richer fonts → richer fonts are worth sharing → sharing drives discovery → discovery brings users who want their own keyboard.
+
+**Impact**
+
+This is positioning, not v1 scope. But it changes decisions we must make *now* so v1 doesn't lock us out:
+
+- **Capture pressure / velocity / stroke order *and* entry/exit points** in `glyphs.strokes`, not just the flattened SVG path. Pillar 1 (including ligature synthesis) needs all of it; throwing it away in v1 is irreversible.
+- **Schema must accommodate public fonts.** A `fonts.visibility` enum (`private` | `unlisted` | `public`) is foreseeable; design `fonts` with this in mind even if v1 only writes `private`.
+- **Stable user-handle / profile slug** is a Pillar 3 prerequisite. Auth should mint one per user from day one even if profile pages don't exist yet.
+- **Decouple the font asset from the device session.** v1 extension, future keyboard, and future API all need to read the same canonical font asset by `(user_id, font_version)`.
+- **SKILL.md** opening paragraph updated to reflect this positioning so future contributors / AI assistants don't model InkPrint as a Calligraphr clone.
+
+**Trade-offs / Open questions**
+
+- **Pillar 1 model choice.** Train a custom model on vector-stroke data, or fine-tune an existing generative model on raster-rendered strokes? Custom is the moat; off-the-shelf is faster. Likely start off-the-shelf for a demo, plan custom for the moat.
+- **Pillar 1 ethics / UX.** AI-generated glyphs the user didn't draw — clearly label as inferred? Let users veto / redraw any inferred glyph? Probably yes to both.
+- **Ligature quality bar.** Synthesised joins that look wrong are *worse* than no ligatures — broken cursive reads as a bug, not as character. Need a confidence threshold below which we skip the ligature and fall back to isolated letterforms.
+- **Pillar 2 platform priority.** iOS keyboard is the better marketing story (iMessage), Android is the easier engineering (Gboard-style IME, fewer sandbox restrictions). Likely Android first, iOS second.
+- **Pillar 3 moderation.** Public profiles = user-generated content = trust & safety surface (offensive handles, font names, abuse). Need a moderation stance before launch.
+- **Sequencing.** v1 ships canvas + extension. v1.1 most likely Pillar 1 (highest user delight per engineering hour). Pillar 3 needs critical-mass user base to be worth building. Pillar 2 is highest-effort and should wait for product-market fit.
+
+---
+
 ## 2026-05-20 — Replace print/scan/upload with on-canvas drawing
 
 **Status:** Accepted

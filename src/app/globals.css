@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Activate `dark:` whenever <html> has the .dark class. JS toggles the class
+   based on user preference (Light / Dark / Auto). This decouples our theme
+   from Samsung Internet's broken prefers-color-scheme reporting. */
+@custom-variant dark (&:is(.dark, .dark *));
+
 @theme {
   --color-brand-50: #f4f5fb;
   --color-brand-100: #e6e8f5;
@@ -57,11 +62,9 @@
   --foreground: var(--color-surface-900);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: var(--color-surface-900);
-    --foreground: var(--color-surface-50);
-  }
+.dark {
+  --background: var(--color-surface-900);
+  --foreground: var(--color-surface-50);
 }
 
 body {

@@ -1,11 +1,20 @@
 ---
 name: inkprint
-description: "InkPrint — a Next.js web service that turns scanned handwriting into usable personal fonts. Use this skill whenever the user is working on the InkPrint project: building the scan-to-font pipeline, the character template UI, the font preview/download system, or the browser extension that injects the user's custom font globally. This skill is the project root — it routes to three role-specific references (frontend, backend, designer) that contain domain-expert instructions. Trigger on any mention of InkPrint, handwriting fonts, scan-to-font, custom font generation, font browser extension, or character template sheets."
+description: "InkPrint — a Next.js platform that turns a person's handwriting into a portable font. Users draw a small seed set of characters on an in-browser canvas; AI infers the full character set (accents, punctuation, ligatures, alternates) in their own hand. The font renders across the web via a browser extension, types on mobile via a custom keyboard, and can be published to a public community library. Use this skill for any InkPrint work: canvas drawing UI, AI inference pipeline, font generation, browser extension, mobile keyboard, or community/social features. Routes to three role-specific references (frontend, backend, designer). Trigger on any mention of InkPrint, handwriting fonts, custom font generation, font browser extension, handwriting keyboard, or font community."
 ---
 
 # InkPrint — Handwriting-to-Font Platform
 
-InkPrint lets users write characters on a guided template, scan or photograph the sheet, upload it to a web service, and receive a fully generated personal font based on their handwriting. The font can be previewed, downloaded, and applied globally across the browser via a companion extension so every website renders in the user's own handwriting.
+InkPrint turns a person's handwriting into a font, then into an identity that travels with them across the web and mobile.
+
+Users draw a small seed set (~62 characters: A–Z, a–z, 0–9) in an in-browser canvas — phone, tablet, or desktop. From that seed, InkPrint:
+
+- **Generates the full character set with AI** — accents, punctuation, Vietnamese diacritics, ligatures, and stylistic alternates, inferred in the user's own hand. Output is OTF/TTF/WOFF2 with OpenType features (`liga`, `clig`, `calt`, `salt`) so words flow like real handwriting.
+- **Renders the user's font across the web** via a browser extension that substitutes their handwriting site-wide.
+- **Types in the user's handwriting on mobile** via a custom keyboard (iOS / Android IME) — WhatsApp, iMessage, Notes, Instagram DMs.
+- **Publishes fonts to a public community library** for opt-in sharing, discovery, and creator monetisation.
+
+One personal font per user, accumulated across sessions and languages.
 
 ## Tech Stack
 

@@ -12,6 +12,7 @@ import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
+import { ThemeToggle } from '@/components/ui/ThemeToggle';
 
 type LoadState = 'pending' | 'loaded' | 'error';
 
@@ -79,9 +80,12 @@ export function InkprintApp() {
       ) : null}
 
       <header className="flex flex-col gap-2">
-        <p className="text-xs font-medium uppercase tracking-widest text-brand-700 dark:text-brand-300">
-          InkPrint
-        </p>
+        <div className="flex items-start justify-between gap-4">
+          <p className="text-xs font-medium uppercase tracking-widest text-brand-700 dark:text-brand-300">
+            InkPrint
+          </p>
+          <ThemeToggle />
+        </div>
         <h1 className="text-3xl font-semibold tracking-tight text-surface-900 dark:text-surface-50 sm:text-4xl">
           Draw your own handwriting font
         </h1>
@@ -176,10 +180,12 @@ function DiagnosticFooter({
 }: DiagnosticFooterProps) {
   const [bodyColor, setBodyColor] = useState<string>('?');
   const [prefersDark, setPrefersDark] = useState<string>('?');
+  const [inverted, setInverted] = useState<string>('?');
   useEffect(() => {
     const update = (): void => {
       setBodyColor(getComputedStyle(document.body).color || '<empty>');
       setPrefersDark(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'yes' : 'no');
+      setInverted(window.matchMedia('(inverted-colors: inverted)').matches ? 'yes' : 'no');
     };
     update();
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
@@ -199,6 +205,7 @@ function DiagnosticFooter({
       </p>
       <p>
         prefers-dark=<span className="text-surface-900 dark:text-surface-50">{prefersDark}</span>
+        {' · '}inverted=<span className="text-surface-900 dark:text-surface-50">{inverted}</span>
         {' · '}body.color=
         <span className="text-surface-900 dark:text-surface-50">{bodyColor}</span>
       </p>
