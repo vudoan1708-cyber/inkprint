@@ -164,7 +164,10 @@ export function InkprintApp() {
           Live preview
         </h2>
         <div className="rounded-2xl border border-surface-200 bg-surface-50 p-4 dark:border-surface-700 dark:bg-surface-900">
-          <FontPreview glyphsByCodePoint={glyphsByCodePoint} />
+          <FontPreview
+            glyphsByCodePoint={glyphsByCodePoint}
+            strokesByCodePoint={strokesByCodePoint}
+          />
         </div>
       </section>
 
