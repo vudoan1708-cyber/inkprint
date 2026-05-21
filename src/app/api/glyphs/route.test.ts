@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Mock } from 'vitest';
 import { NextRequest } from 'next/server';
-import { chainMock } from '@/test-utils/supabase-mock';
+import { chainMock } from '@/test-utils/supabaseMock';
 
 vi.mock('@/lib/supabase/admin', () => ({
   supabaseAdmin: {

@@ -4,7 +4,7 @@ import {
   fontGenerateJobPayloadSchema,
   type ClaimedJob,
   type FontGenerateJobPayload,
-} from '@/types/job-types';
+} from '@/types/jobTypes';
 
 const WORKER_ID = `worker-${randomUUID().slice(0, 8)}`;
 

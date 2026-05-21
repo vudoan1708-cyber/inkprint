@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { fontGenerateSchema } from '@/types/font-schemas';
+import { fontGenerateSchema } from '@/types/fontSchemas';
 
 export async function POST(req: NextRequest) {
   let body: unknown;

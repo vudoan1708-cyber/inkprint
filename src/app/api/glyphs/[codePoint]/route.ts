@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { glyphUpsertSchema } from '@/types/glyph-schemas';
+import { glyphUpsertSchema } from '@/types/glyphSchemas';
 
 const MAX_CODE_POINT = 0x10ffff;
 

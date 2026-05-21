@@ -1,0 +1,54 @@
+export type GlyphRecord = {
+  codePoint: number;
+  svgPath: string;
+  width: number;
+  quality: number | null;
+  updatedAt: string;
+};
+
+type Envelope<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: { code: string; message: string; details?: unknown } };
+
+async function parseEnvelope<T>(res: Response): Promise<T> {
+  const body = (await res.json()) as Envelope<T>;
+  if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`);
+  return body.data;
+}
+
+export async function listGlyphs(userId: string): Promise<GlyphRecord[]> {
+  const res = await fetch(`/api/glyphs?userId=${encodeURIComponent(userId)}`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  });
+  const data = await parseEnvelope<{ glyphs: GlyphRecord[] }>(res);
+  return data.glyphs;
+}
+
+export async function upsertGlyph(input: {
+  userId: string;
+  codePoint: number;
+  svgPath: string;
+  width: number;
+  quality?: number;
+}): Promise<void> {
+  const { codePoint, ...body } = input;
+  const res = await fetch(`/api/glyphs/${codePoint}`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  await parseEnvelope<{ codePoint: number }>(res);
+}
+
+export async function requestFontGeneration(input: {
+  userId: string;
+  familyName: string;
+}): Promise<{ jobId: string }> {
+  const res = await fetch('/api/fonts/generate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseEnvelope<{ jobId: string }>(res);
+}

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { supabaseAdmin } from '@/lib/supabase/admin';
-import { glyphListQuerySchema } from '@/types/glyph-schemas';
+import { glyphListQuerySchema } from '@/types/glyphSchemas';
 
 export async function GET(req: NextRequest) {
   const parsed = glyphListQuerySchema.safeParse({

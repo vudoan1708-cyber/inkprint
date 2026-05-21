@@ -107,7 +107,7 @@ For cross-cutting tasks (e.g. building a new feature end-to-end), read all relev
 2. **Zero pollution** — No dead code, no commented-out blocks, no unused imports, no `console.log` in committed code. Every line must earn its place.
 3. **TypeScript strict** — `strict: true`, `noUncheckedIndexedAccess: true`. No `any`, no `as` casts without a `// SAFETY:` comment explaining why.
 4. **Single source of truth** — Constants in `lib/constants.ts`. Types generated from Supabase schema (`types/supabase.ts`) plus app-level types in `types/`. Env vars validated via Zod schema at startup (`lib/env.ts`).
-5. **Naming** — Files: `kebab-case`. Components: `PascalCase`. Hooks: `use-` prefix, kebab-case file. Types: `PascalCase`, suffixed with intent (`Props`, `Payload`, `Schema`).
+5. **Naming** — Component files: `PascalCase`, matching the exported component (e.g. `DrawingCanvas.tsx`). Non-component files (lib utilities, hooks, types, schemas, test helpers): `camelCase` (e.g. `userId.ts`, `glyphSchemas.ts`, `useFontFace.ts`). Hooks export functions prefixed with `use*` (`useUserId`). Components: `PascalCase`. Types: `PascalCase`, suffixed with intent (`Props`, `Payload`, `Schema`).
 6. **Error boundaries** — Every async operation has explicit error handling. User-facing errors are friendly; developer errors are logged with context.
 7. **Accessibility from day one** — Not bolted on later. Semantic HTML, ARIA where needed, keyboard nav, focus management, colour contrast ≥ 4.5:1.
 8. **Supabase type generation** — After every migration, run `supabase gen types typescript --project-id <project_id> > src/types/supabase.ts`. Never hand-write database types. There is no local Supabase — types are always generated from the hosted project.
