@@ -3,7 +3,10 @@ import { GLYPH_BASELINE_RATIO, GLYPH_UPM } from '@/lib/strokeMath';
 
 const STROKE_THICKNESS = 60;
 const DISC_SEGMENTS = 16;
+const CAP_SEGMENTS = 12;
 const MIN_SEGMENT_LENGTH = 6;
+const MITER_COS_LIMIT = 0.3;
+const JOIN_ARC_STEP = Math.PI / 8;
 const BASELINE_Y = GLYPH_UPM * GLYPH_BASELINE_RATIO;
 
 // Tight bearings around each glyph's actual outline; the 1000u canvas is
@@ -72,10 +75,8 @@ function buildGlyph(g: CompileGlyphInput): Glyph {
   const path = new Path();
   const contours: Contour[] = [];
   for (const stroke of g.strokes) {
-    for (const contour of strokeToOutlines(stroke)) {
-      if (contour.length < 3) continue;
-      contours.push(contour);
-    }
+    const contour = strokeToOutline(stroke);
+    if (contour.length >= 3) contours.push(contour);
   }
 
   if (contours.length === 0) {
@@ -123,40 +124,116 @@ function pushContour(path: Path, points: ReadonlyArray<Point>, shiftX = 0): void
   path.close();
 }
 
-// Expand a polyline into the Minkowski sum of the polyline with a disc of
-// radius r: a round disc at every vertex (caps + joins in one) plus a
-// rectangular quad for every segment. Adjacent shapes overlap; the non-zero
-// fill rule renders the union as one solid stroke — identical to SVG's
-// stroke-linecap="round" stroke-linejoin="round" rendering, with no miter
-// spikes, no self-intersecting outer contour.
-function strokeToOutlines(stroke: ReadonlyArray<Point>): Contour[] {
+// Single closed outline per stroke: parallel offsets on each side, round
+// joins on the outer side of each bend, clamped miter on the inner side,
+// half-disc round caps at both endpoints.
+function strokeToOutline(stroke: ReadonlyArray<Point>): Contour {
   const r = STROKE_THICKNESS / 2;
-  const pts = simplify(stroke, MIN_SEGMENT_LENGTH);
-  if (pts.length === 0) return [];
-  if (pts.length === 1) return [disc(pts[0]!, r)];
+  const raw = simplify(stroke, MIN_SEGMENT_LENGTH);
+  if (raw.length === 0) return [];
+  if (raw.length === 1) return disc(raw[0]!, r);
 
-  const contours: Contour[] = [];
-  for (const p of pts) contours.push(disc(p, r));
-
-  for (let i = 0; i < pts.length - 1; i++) {
-    const a = pts[i]!;
-    const b = pts[i + 1]!;
+  const pts: Point[] = [raw[0]!];
+  const perps: Point[] = [];
+  for (let i = 1; i < raw.length; i++) {
+    const a = pts[pts.length - 1]!;
+    const b = raw[i]!;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
     if (len < 1e-6) continue;
-    const px = (-dy / len) * r;
-    const py = (dx / len) * r;
-    // Order chosen so the quad is CCW in font space (y-up) after toFontY flip.
-    contours.push([
-      { x: a.x + px, y: a.y + py },
-      { x: b.x + px, y: b.y + py },
-      { x: b.x - px, y: b.y - py },
-      { x: a.x - px, y: a.y - py },
-    ]);
+    pts.push(b);
+    perps.push({ x: -dy / len, y: dx / len });
   }
+  if (perps.length === 0) return disc(pts[0]!, r);
 
-  return contours;
+  const positive: Contour = [offsetPoint(pts[0]!, perps[0]!, +1, r)];
+  const negative: Contour = [offsetPoint(pts[0]!, perps[0]!, -1, r)];
+  for (let i = 1; i < perps.length; i++) {
+    const b = pts[i]!;
+    const p1 = perps[i - 1]!;
+    const p2 = perps[i]!;
+    for (const pt of joinAtVertex(b, p1, p2, +1, r)) positive.push(pt);
+    for (const pt of joinAtVertex(b, p1, p2, -1, r)) negative.push(pt);
+  }
+  const lastPt = pts[pts.length - 1]!;
+  const lastPerp = perps[perps.length - 1]!;
+  positive.push(offsetPoint(lastPt, lastPerp, +1, r));
+  negative.push(offsetPoint(lastPt, lastPerp, -1, r));
+
+  const firstPerp = perps[0]!;
+  const startBulge = { x: -firstPerp.y, y: firstPerp.x };
+  const endBulge = { x: lastPerp.y, y: -lastPerp.x };
+  const startCap = capArc(pts[0]!, firstPerp, startBulge, r);
+  const endCap = capArc(lastPt, { x: -lastPerp.x, y: -lastPerp.y }, endBulge, r);
+
+  // Closed loop: top side reversed → start cap (interior arc) → bottom side → end cap (interior arc).
+  return [
+    ...positive.slice().reverse(),
+    ...startCap.slice(1, -1),
+    ...negative,
+    ...endCap.slice(1, -1),
+  ];
+}
+
+function offsetPoint(p: Point, perp: Point, side: 1 | -1, r: number): Point {
+  return { x: p.x + side * perp.x * r, y: p.y + side * perp.y * r };
+}
+
+function joinAtVertex(b: Point, p1: Point, p2: Point, side: 1 | -1, r: number): Point[] {
+  const dot = p1.x * p2.x + p1.y * p2.y;
+  if (dot > 0.9999) return [offsetPoint(b, p1, side, r)];
+  const cross = p1.x * p2.y - p1.y * p2.x;
+  const outerSide: 1 | -1 = cross > 0 ? 1 : -1;
+  if (side === outerSide) return arcBetween(b, p1, p2, side, r);
+  return [miterPoint(b, p1, p2, side, r)];
+}
+
+function arcBetween(b: Point, p1: Point, p2: Point, side: 1 | -1, r: number): Point[] {
+  const start = { x: side * p1.x, y: side * p1.y };
+  const end = { x: side * p2.x, y: side * p2.y };
+  const dot = Math.max(-1, Math.min(1, start.x * end.x + start.y * end.y));
+  const angle = Math.acos(dot);
+  const cross = start.x * end.y - start.y * end.x;
+  const sweep = cross >= 0 ? 1 : -1;
+  const segments = Math.max(2, Math.ceil(angle / JOIN_ARC_STEP));
+  const out: Point[] = [];
+  for (let i = 0; i <= segments; i++) {
+    const t = sweep * (i / segments) * angle;
+    const cosT = Math.cos(t);
+    const sinT = Math.sin(t);
+    const rx = start.x * cosT - start.y * sinT;
+    const ry = start.x * sinT + start.y * cosT;
+    out.push({ x: b.x + rx * r, y: b.y + ry * r });
+  }
+  return out;
+}
+
+function miterPoint(b: Point, p1: Point, p2: Point, side: 1 | -1, r: number): Point {
+  let mx = p1.x + p2.x;
+  let my = p1.y + p2.y;
+  const mlen = Math.hypot(mx, my);
+  if (mlen < 1e-6) return offsetPoint(b, p1, side, r);
+  mx /= mlen;
+  my /= mlen;
+  const cosHalf = mx * p1.x + my * p1.y;
+  const k = cosHalf > MITER_COS_LIMIT ? 1 / cosHalf : 1 / MITER_COS_LIMIT;
+  return { x: b.x + side * mx * k * r, y: b.y + side * my * k * r };
+}
+
+// Half-circle from center + fromPerp*r, sweeping through center + outward*r, to center - fromPerp*r.
+function capArc(center: Point, fromPerp: Point, outward: Point, r: number): Contour {
+  const out: Contour = [];
+  for (let i = 0; i <= CAP_SEGMENTS; i++) {
+    const theta = Math.PI / 2 - Math.PI * (i / CAP_SEGMENTS);
+    const c = Math.cos(theta);
+    const s = Math.sin(theta);
+    out.push({
+      x: center.x + outward.x * c * r + fromPerp.x * s * r,
+      y: center.y + outward.y * c * r + fromPerp.y * s * r,
+    });
+  }
+  return out;
 }
 
 // Distance-based decimation. Canvas sampling produces ~80 nearly-collinear
@@ -183,8 +260,6 @@ function simplify(pts: ReadonlyArray<Point>, minDist: number): Point[] {
 
 function disc(center: Point, r: number): Point[] {
   const out: Point[] = [];
-  // Negative sweep so the disc is CCW in font-y-up after the toFontY flip,
-  // matching the quad winding so non-zero fill treats them as one region.
   for (let i = 0; i < DISC_SEGMENTS; i++) {
     const theta = -(i / DISC_SEGMENTS) * Math.PI * 2;
     out.push({ x: center.x + Math.cos(theta) * r, y: center.y + Math.sin(theta) * r });
