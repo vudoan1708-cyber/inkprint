@@ -33,8 +33,10 @@ export type CanvasTool = 'draw' | 'edit';
 export type DrawingCanvasHandle = {
   getSvgPath: () => string;
   getStrokes: () => Stroke[];
+  setStrokes: (strokes: readonly Stroke[]) => void;
   isEmpty: () => boolean;
   undo: () => void;
+  redo: () => void;
   clear: () => void;
 };
 
@@ -44,6 +46,7 @@ type Props = {
   tool?: CanvasTool;
   onStrokesChange?: (strokes: readonly Stroke[]) => void;
   onCanUndoChange?: (canUndo: boolean) => void;
+  onCanRedoChange?: (canRedo: boolean) => void;
   className?: string;
 };
 
@@ -137,6 +140,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
     tool = 'draw',
     onStrokesChange,
     onCanUndoChange,
+    onCanRedoChange,
     className,
   },
   ref,
@@ -146,6 +150,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
   const strokesRef = useRef<Stroke[]>(initialStrokes ? deepCloneStrokes(initialStrokes) : []);
   const activeStrokeRef = useRef<StrokePoint[] | null>(null);
   const historyRef = useRef<Stroke[][]>([]);
+  const redoRef = useRef<Stroke[][]>([]);
   // Edit-mode selection: which anchor (stroke + vertex index) is currently picked up.
   const selectedAnchorRef = useRef<AnchorRef | null>(null);
   const dragRef = useRef<DragState | null>(null);
@@ -156,6 +161,10 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
     historyRef.current.push(deepCloneStrokes(strokesRef.current));
     if (historyRef.current.length > HISTORY_LIMIT) {
       historyRef.current = historyRef.current.slice(-HISTORY_LIMIT);
+    }
+    if (redoRef.current.length > 0) {
+      redoRef.current = [];
+      onCanRedoChange?.(false);
     }
     onCanUndoChange?.(true);
   };
@@ -359,14 +368,42 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
   useImperativeHandle(ref, () => ({
     getSvgPath: () => strokesToSvgPath(strokesRef.current),
     getStrokes: () => deepCloneStrokes(strokesRef.current),
+    setStrokes: (next: readonly Stroke[]) => {
+      pushHistory();
+      strokesRef.current = deepCloneStrokes(next);
+      activeStrokeRef.current = null;
+      clearSelection();
+      repaint();
+      notifyChange();
+    },
     isEmpty: () => strokesRef.current.length === 0,
     undo: () => {
       const snapshot = historyRef.current.pop();
       if (!snapshot) return;
+      redoRef.current.push(deepCloneStrokes(strokesRef.current));
+      if (redoRef.current.length > HISTORY_LIMIT) {
+        redoRef.current = redoRef.current.slice(-HISTORY_LIMIT);
+      }
       strokesRef.current = snapshot;
       activeStrokeRef.current = null;
       clearSelection();
       onCanUndoChange?.(historyRef.current.length > 0);
+      onCanRedoChange?.(true);
+      repaint();
+      notifyChange();
+    },
+    redo: () => {
+      const snapshot = redoRef.current.pop();
+      if (!snapshot) return;
+      historyRef.current.push(deepCloneStrokes(strokesRef.current));
+      if (historyRef.current.length > HISTORY_LIMIT) {
+        historyRef.current = historyRef.current.slice(-HISTORY_LIMIT);
+      }
+      strokesRef.current = snapshot;
+      activeStrokeRef.current = null;
+      clearSelection();
+      onCanUndoChange?.(true);
+      onCanRedoChange?.(redoRef.current.length > 0);
       repaint();
       notifyChange();
     },

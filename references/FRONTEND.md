@@ -162,6 +162,26 @@ export function cn(...inputs: ClassValue[]) {
 
 Import from `@/lib/cn` everywhere. Never use string concatenation for Tailwind classes.
 
+### Icons — `lucide-react`
+
+Use [`lucide-react`](https://lucide.dev/) for icons in action buttons and inline UI. Import the specific icon by name; never barrel-import the whole library.
+
+```tsx
+import { Sparkles } from 'lucide-react'
+
+<Button variant="primary">
+  <Sparkles className="size-4 text-amber-400" aria-hidden />
+  Smooth strokes
+</Button>
+```
+
+Rules:
+- Icons pair with a text label (button text or `aria-label`). Icon-only buttons use `IconButton` and require an explicit `aria-label`.
+- Size via Tailwind: `size-4` inline-in-button, `size-5` compact toolbar, `size-6` primary nav.
+- Default tint is `currentColor`. Use semantic colours only when the meaning matters.
+- **Golden `Sparkles` (`text-amber-400`) is reserved for AI-assist / auto-effect actions** — smoothing, AI-inferred glyphs, magic clean-up. Putting it in front of the button text signals "this transforms what you've drawn".
+- Decorative icons get `aria-hidden`.
+
 ---
 
 ## 2. Reusability Rules

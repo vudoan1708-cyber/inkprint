@@ -23,6 +23,7 @@ export function InkprintApp() {
   const { userId, error: userIdError } = useUserId();
   const [glyphsByCodePoint, setGlyphsByCodePoint] = useState<Map<number, string>>(new Map());
   const [strokesByCodePoint, setStrokesByCodePoint] = useState<Map<number, Stroke[]>>(new Map());
+  const [smoothingByCodePoint, setSmoothingByCodePoint] = useState<Map<number, boolean>>(new Map());
   const [loadState, setLoadState] = useState<LoadState>('pending');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [selectedSetKey, setSelectedSetKey] = useState<CharacterSetKey>('latin-basic');
@@ -39,6 +40,7 @@ export function InkprintApp() {
         if (cancelled) return;
         setGlyphsByCodePoint(buildGlyphMap(glyphs));
         setStrokesByCodePoint(buildStrokeMap(glyphs));
+        setSmoothingByCodePoint(buildSmoothingMap(glyphs));
         setLoadState('loaded');
       })
       .catch((error: unknown) => {
@@ -56,7 +58,11 @@ export function InkprintApp() {
     [characterSet, glyphsByCodePoint],
   );
 
-  const handleSaveGlyph = async (svgPath: string, strokes: Stroke[]): Promise<void> => {
+  const handleSaveGlyph = async (
+    svgPath: string,
+    strokes: Stroke[],
+    smoothingApplied: boolean,
+  ): Promise<void> => {
     if (!userId || activeCodePoint === null) return;
     await upsertGlyph({
       userId,
@@ -64,6 +70,7 @@ export function InkprintApp() {
       svgPath,
       width: GLYPH_UPM,
       strokes,
+      smoothingApplied,
     });
     setGlyphsByCodePoint((previous) => {
       const next = new Map(previous);
@@ -73,6 +80,12 @@ export function InkprintApp() {
     setStrokesByCodePoint((previous) => {
       const next = new Map(previous);
       next.set(activeCodePoint, strokes);
+      return next;
+    });
+    setSmoothingByCodePoint((previous) => {
+      const next = new Map(previous);
+      if (smoothingApplied) next.set(activeCodePoint, true);
+      else next.delete(activeCodePoint);
       return next;
     });
   };
@@ -196,6 +209,7 @@ export function InkprintApp() {
           codePoint={activeCodePoint}
           hasExistingGlyph={glyphsByCodePoint.has(activeCodePoint)}
           initialStrokes={strokesByCodePoint.get(activeCodePoint) ?? null}
+          initialSmoothing={smoothingByCodePoint.get(activeCodePoint) ?? false}
           onSave={handleSaveGlyph}
           onClose={() => setActiveCodePoint(null)}
         />
@@ -216,6 +230,14 @@ function buildStrokeMap(glyphs: readonly GlyphRecord[]): Map<number, Stroke[]> {
   const map = new Map<number, Stroke[]>();
   for (const glyph of glyphs) {
     if (glyph.strokes) map.set(glyph.codePoint, glyph.strokes);
+  }
+  return map;
+}
+
+function buildSmoothingMap(glyphs: readonly GlyphRecord[]): Map<number, boolean> {
+  const map = new Map<number, boolean>();
+  for (const glyph of glyphs) {
+    if (glyph.smoothingApplied) map.set(glyph.codePoint, true);
   }
   return map;
 }

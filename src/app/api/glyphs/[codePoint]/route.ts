@@ -50,7 +50,7 @@ export async function PUT(
     );
   }
 
-  const { userId, svgPath, width, quality, strokes } = parsed.data;
+  const { userId, svgPath, width, quality, strokes, smoothingApplied } = parsed.data;
 
   const { error } = await supabaseAdmin.from('glyphs').upsert(
     {
@@ -60,6 +60,7 @@ export async function PUT(
       width,
       quality: quality ?? null,
       strokes: strokes ?? null,
+      smoothing_applied: smoothingApplied ?? false,
     },
     { onConflict: 'user_id,code_point' },
   );

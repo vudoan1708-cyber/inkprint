@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Redo2, Sparkles, Undo2, X } from 'lucide-react';
 import {
   DrawingCanvas,
   type CanvasTool,
@@ -10,12 +11,14 @@ import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
 import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
+import { smoothStrokes } from '@/lib/smoothing';
 
 type Props = {
   codePoint: number;
   hasExistingGlyph: boolean;
   initialStrokes: Stroke[] | null;
-  onSave: (svgPath: string, strokes: Stroke[]) => Promise<void>;
+  initialSmoothing: boolean;
+  onSave: (svgPath: string, strokes: Stroke[], smoothingApplied: boolean) => Promise<void>;
   onClose: () => void;
 };
 
@@ -23,6 +26,7 @@ export function DrawingModal({
   codePoint,
   hasExistingGlyph,
   initialStrokes,
+  initialSmoothing,
   onSave,
   onClose,
 }: Props) {
@@ -30,8 +34,11 @@ export function DrawingModal({
   const [strokeCount, setStrokeCount] = useState(initialStrokes?.length ?? 0);
   const [tool, setTool] = useState<CanvasTool>('draw');
   const [canUndo, setCanUndo] = useState(false);
+  const [canRedo, setCanRedo] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [smoothingEnabled, setSmoothingEnabled] = useState(initialSmoothing);
+  const preSmoothSnapshotRef = useRef<Stroke[] | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
   const character = String.fromCodePoint(codePoint);
@@ -53,8 +60,8 @@ export function DrawingModal({
 
   const handleSave = async (): Promise<void> => {
     const handle = canvasRef.current;
-    const path = handle?.getSvgPath() ?? '';
     const strokes = handle?.getStrokes() ?? [];
+    const path = handle?.getSvgPath() ?? '';
     if (!path || strokes.length === 0) {
       setErrorMessage('Draw the glyph before saving.');
       return;
@@ -62,12 +69,27 @@ export function DrawingModal({
     setIsSaving(true);
     setErrorMessage(null);
     try {
-      await onSave(path, strokes);
+      await onSave(path, strokes, smoothingEnabled);
       onClose();
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to save glyph.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleToggleSmoothing = (): void => {
+    const handle = canvasRef.current;
+    if (!handle) return;
+    if (!smoothingEnabled) {
+      preSmoothSnapshotRef.current = handle.getStrokes();
+      handle.setStrokes(smoothStrokes(preSmoothSnapshotRef.current));
+      setSmoothingEnabled(true);
+    } else {
+      const snapshot = preSmoothSnapshotRef.current;
+      if (snapshot) handle.setStrokes(snapshot);
+      preSmoothSnapshotRef.current = null;
+      setSmoothingEnabled(false);
     }
   };
 
@@ -107,28 +129,22 @@ export function DrawingModal({
               </p>
             ) : null}
 
-            <DrawingCanvas
-              ref={canvasRef}
-              ghostChar={character}
-              initialStrokes={initialStrokes}
-              tool={tool}
-              onStrokesChange={(strokes) => {
-                setStrokeCount(strokes.length);
-                // Move tool requires something to move; bounce back to Draw if everything's gone.
-                if (strokes.length === 0) setTool('draw');
-              }}
-              onCanUndoChange={setCanUndo}
-              className="mx-auto aspect-square w-full max-h-[calc(100dvh-260px)] sm:max-h-[60vh]"
-            />
-
-            {errorMessage ? (
-              <p role="alert" className="text-sm text-danger-600">
-                {errorMessage}
-              </p>
-            ) : null}
-
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="relative mx-auto aspect-square w-full max-h-[calc(100dvh-260px)] sm:max-h-[60vh]">
+              <DrawingCanvas
+                ref={canvasRef}
+                ghostChar={character}
+                initialStrokes={initialStrokes}
+                tool={tool}
+                onStrokesChange={(strokes) => {
+                  setStrokeCount(strokes.length);
+                  // Move tool requires something to move; bounce back to Draw if everything's gone.
+                  if (strokes.length === 0) setTool('draw');
+                }}
+                onCanUndoChange={setCanUndo}
+                onCanRedoChange={setCanRedo}
+                className="h-full w-full"
+              />
+              <div className="absolute left-3 top-3 z-10">
                 <Tabs
                   ariaLabel="Canvas tool"
                   options={[
@@ -138,21 +154,54 @@ export function DrawingModal({
                   value={tool}
                   onChange={setTool}
                 />
+              </div>
+            </div>
+
+            {errorMessage ? (
+              <p role="alert" className="text-sm text-danger-600">
+                {errorMessage}
+              </p>
+            ) : null}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="secondary"
                   size="sm"
                   onClick={() => canvasRef.current?.undo()}
                   disabled={!canUndo}
+                  leadingIcon={<Undo2 className="size-4" aria-hidden />}
                 >
                   Undo
                 </Button>
                 <Button
                   variant="secondary"
                   size="sm"
+                  onClick={() => canvasRef.current?.redo()}
+                  disabled={!canRedo}
+                  leadingIcon={<Redo2 className="size-4" aria-hidden />}
+                >
+                  Redo
+                </Button>
+                <Button
+                  variant="danger"
+                  size="sm"
                   onClick={() => canvasRef.current?.clear()}
                   disabled={!hasStrokes}
+                  leadingIcon={<X className="size-4" aria-hidden />}
                 >
                   Clear
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  isActive={smoothingEnabled}
+                  aria-pressed={smoothingEnabled}
+                  onClick={handleToggleSmoothing}
+                  disabled={!hasStrokes || initialSmoothing}
+                  leadingIcon={<Sparkles className="size-4 text-amber-400" aria-hidden />}
+                >
+                  Smooth {smoothingEnabled ? 'on' : 'off'}
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2">

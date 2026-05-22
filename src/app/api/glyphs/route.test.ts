@@ -32,6 +32,7 @@ describe('GET /api/glyphs', () => {
             width: 500,
             quality: 0.9,
             strokes: [[{ x: 100, y: 100, pressure: 0.5 }]],
+            smoothing_applied: true,
             updated_at: '2026-05-21T00:00:00Z',
           },
           {
@@ -40,6 +41,7 @@ describe('GET /api/glyphs', () => {
             width: 400,
             quality: null,
             strokes: null,
+            smoothing_applied: false,
             updated_at: '2026-05-21T00:01:00Z',
           },
         ],
@@ -63,6 +65,7 @@ describe('GET /api/glyphs', () => {
             width: 500,
             quality: 0.9,
             strokes: [[{ x: 100, y: 100, pressure: 0.5 }]],
+            smoothingApplied: true,
             updatedAt: '2026-05-21T00:00:00Z',
           },
           {
@@ -71,6 +74,7 @@ describe('GET /api/glyphs', () => {
             width: 400,
             quality: null,
             strokes: null,
+            smoothingApplied: false,
             updatedAt: '2026-05-21T00:01:00Z',
           },
         ],

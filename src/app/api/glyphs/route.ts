@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('glyphs')
-    .select('code_point, svg_path, width, quality, strokes, updated_at')
+    .select('code_point, svg_path, width, quality, strokes, smoothing_applied, updated_at')
     .eq('user_id', userId);
 
   if (error) {
@@ -42,6 +42,7 @@ export async function GET(req: NextRequest) {
     width: g.width,
     quality: g.quality,
     strokes: g.strokes,
+    smoothingApplied: g.smoothing_applied,
     updatedAt: g.updated_at,
   }));
 

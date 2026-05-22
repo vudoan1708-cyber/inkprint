@@ -23,6 +23,7 @@ export const glyphUpsertSchema = z.object({
   width: z.number().int().min(50).max(2000),
   quality: z.number().min(0).max(1).optional(),
   strokes: strokesSchema.optional(),
+  smoothingApplied: z.boolean().optional(),
 });
 
 export type GlyphUpsertInput = z.infer<typeof glyphUpsertSchema>;

@@ -6,6 +6,7 @@ export type GlyphRecord = {
   width: number;
   quality: number | null;
   strokes: Stroke[] | null;
+  smoothingApplied: boolean;
   updatedAt: string;
 };
 
@@ -35,6 +36,7 @@ export async function upsertGlyph(input: {
   width: number;
   quality?: number;
   strokes?: Stroke[];
+  smoothingApplied?: boolean;
 }): Promise<void> {
   const { codePoint, ...body } = input;
   const res = await fetch(`/api/glyphs/${codePoint}`, {
