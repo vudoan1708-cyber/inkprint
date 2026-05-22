@@ -28,7 +28,7 @@ import {
 } from '@/lib/canvasGeometry';
 import { cn } from '@/lib/cn';
 
-export type CanvasTool = 'draw' | 'edit';
+export type CanvasTool = 'draw' | 'edit' | 'move';
 
 export type DrawingCanvasHandle = {
   getSvgPath: () => string;
@@ -77,6 +77,16 @@ type DragState = {
   // Per-vertex influence in [0, 1]. 1 at the dragged anchor, 0 at the adjacent anchors,
   // linearly interpolated for the raw points in between (rubber-band falloff).
   weights: Map<number, number>;
+  moved: boolean;
+  pushedHistory: boolean;
+};
+
+type StrokeDragState = {
+  strokeIndex: number;
+  startX: number;
+  startY: number;
+  // Snapshot of every vertex's position at drag-start; indexed parallel to the stroke.
+  originals: { x: number; y: number }[];
   moved: boolean;
   pushedHistory: boolean;
 };
@@ -154,6 +164,9 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
   // Edit-mode selection: which anchor (stroke + vertex index) is currently picked up.
   const selectedAnchorRef = useRef<AnchorRef | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  // Move-mode selection: which whole stroke is being translated.
+  const selectedStrokeIndexRef = useRef<number | null>(null);
+  const strokeDragRef = useRef<StrokeDragState | null>(null);
   const lastEventTimeRef = useRef<number>(0);
   const [, forceRender] = useState(0);
 
@@ -172,6 +185,8 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
   const clearSelection = (): void => {
     selectedAnchorRef.current = null;
     dragRef.current = null;
+    selectedStrokeIndexRef.current = null;
+    strokeDragRef.current = null;
   };
 
   const repaint = useCallback((): void => {
@@ -192,10 +207,13 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
     const scale = width / GLYPH_UPM;
 
     const inkColor = resolveInkColor();
-    context.strokeStyle = inkColor;
-    context.fillStyle = inkColor;
-    for (const stroke of allStrokes) {
-      drawStroke(context, stroke, scale);
+    const selectedStrokeIdx = tool === 'move' ? selectedStrokeIndexRef.current : null;
+    for (let i = 0; i < allStrokes.length; i++) {
+      const isSelected = i === selectedStrokeIdx;
+      const color = isSelected ? resolveSelectionColor() : inkColor;
+      context.strokeStyle = color;
+      context.fillStyle = color;
+      drawStroke(context, allStrokes[i]!, scale);
     }
 
     if (tool === 'edit') {
@@ -329,6 +347,60 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
     next.splice(insertAt, 0, { x, y, pressure, isAnchor: true });
     strokesRef.current[strokeIdx] = next;
     return insertAt;
+  };
+
+  // ─── Move tool (whole-stroke translation) helpers ────────────────────────
+
+  const beginStrokeMove = (point: Point): void => {
+    const strokeIdx = findClosestStrokeIndex(
+      point,
+      strokesRef.current,
+      STROKE_HIT_THRESHOLD,
+    );
+    if (strokeIdx === null) {
+      selectedStrokeIndexRef.current = null;
+      strokeDragRef.current = null;
+      repaint();
+      return;
+    }
+    const stroke = strokesRef.current[strokeIdx]!;
+    selectedStrokeIndexRef.current = strokeIdx;
+    strokeDragRef.current = {
+      strokeIndex: strokeIdx,
+      startX: point.x,
+      startY: point.y,
+      originals: stroke.map((p) => ({ x: p.x, y: p.y })),
+      moved: false,
+      pushedHistory: false,
+    };
+    repaint();
+  };
+
+  const continueStrokeMove = (point: Point): void => {
+    const drag = strokeDragRef.current;
+    if (!drag) return;
+    const dx = point.x - drag.startX;
+    const dy = point.y - drag.startY;
+    if (Math.hypot(dx, dy) <= DRAG_DEADZONE) return;
+    if (!drag.pushedHistory) {
+      pushHistory();
+      drag.pushedHistory = true;
+    }
+    drag.moved = true;
+    const stroke = strokesRef.current[drag.strokeIndex]!;
+    const next = stroke.map((v, i) => {
+      const origin = drag.originals[i]!;
+      return { ...v, x: origin.x + dx, y: origin.y + dy };
+    });
+    strokesRef.current[drag.strokeIndex] = next;
+    repaint();
+  };
+
+  const endStrokeMove = (): void => {
+    const moved = strokeDragRef.current?.moved ?? false;
+    strokeDragRef.current = null;
+    if (moved) notifyChange();
+    else repaint();
   };
 
   // ─── Draw tool helpers ───────────────────────────────────────────────────
@@ -479,6 +551,10 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
       beginMove(point);
       return;
     }
+    if (tool === 'move') {
+      beginStrokeMove(point);
+      return;
+    }
     const pressure = resolvePressure(event.pressure, undefined, point, 0);
     beginDraw(point, pressure, event.timeStamp);
   };
@@ -491,6 +567,12 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
       continueMove(point);
       return;
     }
+    if (tool === 'move') {
+      if (!strokeDragRef.current) return;
+      event.preventDefault();
+      continueStrokeMove(point);
+      return;
+    }
     if (!activeStrokeRef.current) return;
     event.preventDefault();
     extendDraw(point, event.timeStamp, event.pressure);
@@ -499,6 +581,7 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
   const finishInteraction = (event: React.PointerEvent<HTMLCanvasElement>): void => {
     (event.target as Element).releasePointerCapture?.(event.pointerId);
     if (tool === 'edit') endMove();
+    else if (tool === 'move') endStrokeMove();
     else endDraw();
   };
 
@@ -537,21 +620,26 @@ export const DrawingCanvas = forwardRef<DrawingCanvasHandle, Props>(function Dra
       />
       <canvas
         ref={canvasRef}
-        className={cn(
-          'absolute inset-0 m-auto touch-none',
-          tool === 'edit' ? 'cursor-pointer' : 'cursor-crosshair',
-        )}
+        className={cn('absolute inset-0 m-auto touch-none', cursorClassForTool(tool))}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={finishInteraction}
         onPointerCancel={finishInteraction}
         onPointerLeave={(event) => {
-          if (activeStrokeRef.current || dragRef.current) finishInteraction(event);
+          if (activeStrokeRef.current || dragRef.current || strokeDragRef.current) {
+            finishInteraction(event);
+          }
         }}
       />
     </div>
   );
 });
+
+function cursorClassForTool(tool: CanvasTool): string {
+  if (tool === 'edit') return 'cursor-pointer';
+  if (tool === 'move') return 'cursor-move';
+  return 'cursor-crosshair';
+}
 
 function drawStroke(
   context: CanvasRenderingContext2D,

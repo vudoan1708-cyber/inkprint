@@ -14,6 +14,16 @@ import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 import { smoothStrokes } from '@/lib/smoothing';
 import { glyphDisplayLabel, glyphGhostChar } from '@/lib/characterSets';
 
+function toolHintFor(tool: CanvasTool): string {
+  if (tool === 'edit') {
+    return 'Tap a stroke to drop an anchor, then drag it (or any existing anchor) to reshape.';
+  }
+  if (tool === 'move') {
+    return 'Tap a stroke to select it, then drag to move the whole stroke.';
+  }
+  return `Use a stylus or finger for best results. Path is normalised to a ${GLYPH_UPM}-unit em.`;
+}
+
 type Props = {
   codePoint: number;
   hasExistingGlyph: boolean;
@@ -152,6 +162,7 @@ export function DrawingModal({
                   options={[
                     { value: 'draw', label: 'Draw' },
                     { value: 'edit', label: 'Edit', disabled: !hasStrokes },
+                    { value: 'move', label: 'Move', disabled: !hasStrokes },
                   ]}
                   value={tool}
                   onChange={setTool}
@@ -220,11 +231,7 @@ export function DrawingModal({
                 </Button>
               </div>
             </div>
-            <p className="text-xs text-surface-400">
-              {tool === 'edit'
-                ? 'Tap a stroke to drop an anchor, then drag it (or any existing anchor) to reshape.'
-                : `Use a stylus or finger for best results. Path is normalised to a ${GLYPH_UPM}-unit em.`}
-            </p>
+            <p className="text-xs text-surface-400">{toolHintFor(tool)}</p>
           </div>
         </div>
       </div>
