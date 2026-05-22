@@ -5,7 +5,12 @@ import { Sparkles } from 'lucide-react';
 import { CHARACTER_SETS, type CharacterSetKey } from '@/lib/characterSets';
 import { useUserId } from '@/lib/userId';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
-import { listGlyphs, upsertGlyph, type GlyphRecord } from '@/lib/apiClient';
+import {
+  listGlyphs,
+  upsertGlyph,
+  upsertGlyphsBulk,
+  type GlyphRecord,
+} from '@/lib/apiClient';
 import { composeAll } from '@/lib/glyphComposition';
 import type { GlyphSource } from '@/types/glyphSchemas';
 import { GlyphGrid } from './GlyphGrid';
@@ -130,18 +135,16 @@ export function InkprintApp() {
       return;
     }
     try {
-      await Promise.all(
-        Array.from(produced, ([codePoint, strokes]) =>
-          upsertGlyph({
-            userId,
-            codePoint,
-            svgPath: strokesToSvgPath(strokes),
-            width: GLYPH_UPM,
-            strokes,
-            source: 'composed',
-          }),
-        ),
-      );
+      await upsertGlyphsBulk({
+        userId,
+        glyphs: Array.from(produced, ([codePoint, strokes]) => ({
+          codePoint,
+          svgPath: strokesToSvgPath(strokes),
+          width: GLYPH_UPM,
+          strokes,
+          source: 'composed',
+        })),
+      });
     } catch (error) {
       setIsAutoFilling(false);
       toast.error(error instanceof Error ? error.message : 'Auto-fill failed.');

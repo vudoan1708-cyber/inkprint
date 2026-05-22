@@ -50,6 +50,30 @@ export async function upsertGlyph(input: {
   await parseEnvelope<{ codePoint: number }>(res);
 }
 
+export type GlyphBulkItem = {
+  codePoint: number;
+  svgPath: string;
+  width: number;
+  quality?: number;
+  strokes?: Stroke[];
+  smoothingApplied?: boolean;
+  source?: GlyphSource;
+};
+
+// Single-request bulk upsert. The server collapses to one Supabase upsert,
+// so this scales with payload size rather than connection count.
+export async function upsertGlyphsBulk(input: {
+  userId: string;
+  glyphs: readonly GlyphBulkItem[];
+}): Promise<{ count: number }> {
+  const res = await fetch('/api/glyphs', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+  return parseEnvelope<{ count: number }>(res);
+}
+
 export async function requestFontGeneration(input: {
   userId: string;
   familyName: string;

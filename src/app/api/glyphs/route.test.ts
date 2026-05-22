@@ -16,6 +16,10 @@ async function loadHandler() {
   return (await import('./route')).GET;
 }
 
+async function loadPostHandler() {
+  return (await import('./route')).POST;
+}
+
 describe('GET /api/glyphs', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,5 +120,92 @@ describe('GET /api/glyphs', () => {
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('QUERY_FAILED');
+  });
+});
+
+describe('POST /api/glyphs (bulk upsert)', () => {
+  const validBulkBody = {
+    userId: TEST_USER_ID,
+    glyphs: [
+      { codePoint: 65, svgPath: 'M 0 0 L 10 10 Z', width: 500 },
+      {
+        codePoint: 97,
+        svgPath: 'M 0 0 L 20 20 Z',
+        width: 500,
+        source: 'composed' as const,
+      },
+    ],
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    const { supabaseAdmin } = await import('@/lib/supabase/admin');
+    (supabaseAdmin.from as Mock).mockReturnValue(chainMock({ data: null, error: null }));
+  });
+
+  function makeBulkReq(body: unknown): NextRequest {
+    return new NextRequest('http://localhost/api/glyphs', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  it('upserts every glyph in one call and returns the count', async () => {
+    const POST = await loadPostHandler();
+    const res = await POST(makeBulkReq(validBulkBody));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body).toEqual({ ok: true, data: { count: 2 } });
+
+    const { supabaseAdmin } = await import('@/lib/supabase/admin');
+    expect(supabaseAdmin.from).toHaveBeenCalledTimes(1);
+    expect(supabaseAdmin.from).toHaveBeenCalledWith('glyphs');
+  });
+
+  it('returns 400 VALIDATION_ERROR when the glyphs array is empty', async () => {
+    const POST = await loadPostHandler();
+    const res = await POST(makeBulkReq({ userId: TEST_USER_ID, glyphs: [] }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 VALIDATION_ERROR when a glyph has a bad svgPath', async () => {
+    const POST = await loadPostHandler();
+    const res = await POST(
+      makeBulkReq({
+        userId: TEST_USER_ID,
+        glyphs: [{ codePoint: 65, svgPath: '<script>alert(1)</script>', width: 500 }],
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('VALIDATION_ERROR');
+  });
+
+  it('returns 400 INVALID_JSON when body is not valid JSON', async () => {
+    const POST = await loadPostHandler();
+    const req = new NextRequest('http://localhost/api/glyphs', {
+      method: 'POST',
+      body: 'not-json',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('INVALID_JSON');
+  });
+
+  it('returns 500 UPSERT_FAILED when supabase errors', async () => {
+    const { supabaseAdmin } = await import('@/lib/supabase/admin');
+    (supabaseAdmin.from as Mock).mockReturnValue(
+      chainMock({ data: null, error: { message: 'constraint violation' } }),
+    );
+    const POST = await loadPostHandler();
+    const res = await POST(makeBulkReq(validBulkBody));
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error.code).toBe('UPSERT_FAILED');
   });
 });

@@ -32,6 +32,33 @@ export const glyphUpsertSchema = z.object({
 
 export type GlyphUpsertInput = z.infer<typeof glyphUpsertSchema>;
 
+// Same fields as glyphUpsertSchema but with codePoint as part of the payload
+// rather than a path param. Used by POST /api/glyphs for bulk writes.
+const MAX_CODE_POINT = 0x10ffff;
+export const glyphBulkUpsertSchema = z.object({
+  userId: z.uuid(),
+  glyphs: z
+    .array(
+      z.object({
+        codePoint: z.number().int().min(0).max(MAX_CODE_POINT),
+        svgPath: z
+          .string()
+          .min(1)
+          .max(100_000)
+          .regex(SVG_PATH_REGEX, 'svgPath contains disallowed characters'),
+        width: z.number().int().min(50).max(2000),
+        quality: z.number().min(0).max(1).optional(),
+        strokes: strokesSchema.optional(),
+        smoothingApplied: z.boolean().optional(),
+        source: glyphSourceSchema.optional(),
+      }),
+    )
+    .min(1)
+    .max(256),
+});
+
+export type GlyphBulkUpsertInput = z.infer<typeof glyphBulkUpsertSchema>;
+
 export const glyphListQuerySchema = z.object({
   userId: z.uuid(),
 });
