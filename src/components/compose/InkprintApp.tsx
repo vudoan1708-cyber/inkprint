@@ -201,66 +201,8 @@ export function InkprintApp() {
         />
       ) : null}
 
-      <DiagnosticFooter
-        userId={userId}
-        userIdError={userIdError}
-        loadState={loadState}
-        loadError={loadError}
-        glyphCount={glyphsByCodePoint.size}
-      />
+      <footer />
     </div>
-  );
-}
-
-type DiagnosticFooterProps = {
-  userId: string | null;
-  userIdError: string | null;
-  loadState: LoadState;
-  loadError: string | null;
-  glyphCount: number;
-};
-
-function DiagnosticFooter({
-  userId,
-  userIdError,
-  loadState,
-  loadError,
-  glyphCount,
-}: DiagnosticFooterProps) {
-  const [bodyColor, setBodyColor] = useState<string>('?');
-  const [prefersDark, setPrefersDark] = useState<string>('?');
-  const [inverted, setInverted] = useState<string>('?');
-  useEffect(() => {
-    const update = (): void => {
-      setBodyColor(getComputedStyle(document.body).color || '<empty>');
-      setPrefersDark(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'yes' : 'no');
-      setInverted(window.matchMedia('(inverted-colors: inverted)').matches ? 'yes' : 'no');
-    };
-    update();
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    mediaQuery.addEventListener('change', update);
-    return () => mediaQuery.removeEventListener('change', update);
-  }, []);
-  return (
-    <footer className="mt-4 border-t border-surface-200 pt-3 font-mono text-xs text-surface-500 dark:border-surface-700 dark:text-surface-400">
-      <p>
-        state=<span className="text-surface-900 dark:text-surface-50">{loadState}</span>
-        {' · '}user=
-        <span className="text-surface-900 dark:text-surface-50">
-          {userId ? `${userId.slice(0, 8)}…` : 'null'}
-        </span>
-        {' · '}glyphs=
-        <span className="text-surface-900 dark:text-surface-50">{glyphCount}</span>
-      </p>
-      <p>
-        prefers-dark=<span className="text-surface-900 dark:text-surface-50">{prefersDark}</span>
-        {' · '}inverted=<span className="text-surface-900 dark:text-surface-50">{inverted}</span>
-        {' · '}body.color=
-        <span className="text-surface-900 dark:text-surface-50">{bodyColor}</span>
-      </p>
-      {userIdError ? <p className="text-danger-600">userId error: {userIdError}</p> : null}
-      {loadError ? <p className="text-danger-600">load error: {loadError}</p> : null}
-    </footer>
   );
 }
 

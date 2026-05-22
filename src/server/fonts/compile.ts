@@ -2,12 +2,18 @@ import { Font, Glyph, Path } from 'opentype.js';
 import { GLYPH_BASELINE_RATIO, GLYPH_UPM } from '@/lib/strokeMath';
 
 const STROKE_THICKNESS = 60;
-const CAP_SEGMENTS = 8;
-const DOT_SEGMENTS = 16;
-const MITER_COS_LIMIT = 0.2;
+const DISC_SEGMENTS = 16;
+const MIN_SEGMENT_LENGTH = 6;
 const BASELINE_Y = GLYPH_UPM * GLYPH_BASELINE_RATIO;
 
+// Tight bearings around each glyph's actual outline; the 1000u canvas is
+// mostly whitespace and using it as advance width spaces letters out.
+const LEFT_BEARING = 30;
+const RIGHT_BEARING = 30;
+const SPACE_WIDTH = 400;
+
 type Point = { x: number; y: number };
+type Contour = Point[];
 
 export type CompileGlyphInput = {
   codePoint: number;
@@ -33,7 +39,7 @@ export function compileFont(input: CompileFontInput): ArrayBuffer {
   const space = new Glyph({
     name: 'space',
     unicode: 0x20,
-    advanceWidth: GLYPH_UPM / 3,
+    advanceWidth: SPACE_WIDTH,
     path: new Path(),
   });
 
@@ -64,15 +70,40 @@ export function compileFont(input: CompileFontInput): ArrayBuffer {
 
 function buildGlyph(g: CompileGlyphInput): Glyph {
   const path = new Path();
+  const contours: Contour[] = [];
   for (const stroke of g.strokes) {
-    const outline = strokeToOutline(stroke);
-    if (outline.length < 3) continue;
-    pushContour(path, outline);
+    for (const contour of strokeToOutlines(stroke)) {
+      if (contour.length < 3) continue;
+      contours.push(contour);
+    }
   }
+
+  if (contours.length === 0) {
+    return new Glyph({
+      name: glyphName(g.codePoint),
+      unicode: g.codePoint,
+      advanceWidth: SPACE_WIDTH,
+      path,
+    });
+  }
+
+  let xMin = Infinity;
+  let xMax = -Infinity;
+  for (const c of contours) {
+    for (const p of c) {
+      if (p.x < xMin) xMin = p.x;
+      if (p.x > xMax) xMax = p.x;
+    }
+  }
+  const shiftX = LEFT_BEARING - xMin;
+  const advanceWidth = LEFT_BEARING + (xMax - xMin) + RIGHT_BEARING;
+
+  for (const c of contours) pushContour(path, c, shiftX);
+
   return new Glyph({
     name: glyphName(g.codePoint),
     unicode: g.codePoint,
-    advanceWidth: g.width,
+    advanceWidth,
     path,
   });
 }
@@ -82,112 +113,83 @@ function toFontY(y: number): number {
   return BASELINE_Y - y;
 }
 
-function pushContour(path: Path, points: ReadonlyArray<Point>): void {
+function pushContour(path: Path, points: ReadonlyArray<Point>, shiftX = 0): void {
   const first = points[0]!;
-  path.moveTo(first.x, toFontY(first.y));
+  path.moveTo(first.x + shiftX, toFontY(first.y));
   for (let i = 1; i < points.length; i++) {
     const p = points[i]!;
-    path.lineTo(p.x, toFontY(p.y));
+    path.lineTo(p.x + shiftX, toFontY(p.y));
   }
   path.close();
 }
 
-// Expand a polyline into a closed outline polygon of uniform thickness.
-// Endpoints get round caps; interior joins use miter with a cosine clamp so
-// acute angles don't spike outward to infinity.
-function strokeToOutline(stroke: ReadonlyArray<Point>): Point[] {
+// Expand a polyline into the Minkowski sum of the polyline with a disc of
+// radius r: a round disc at every vertex (caps + joins in one) plus a
+// rectangular quad for every segment. Adjacent shapes overlap; the non-zero
+// fill rule renders the union as one solid stroke — identical to SVG's
+// stroke-linecap="round" stroke-linejoin="round" rendering, with no miter
+// spikes, no self-intersecting outer contour.
+function strokeToOutlines(stroke: ReadonlyArray<Point>): Contour[] {
   const r = STROKE_THICKNESS / 2;
-  const pts = dedupe(stroke);
+  const pts = simplify(stroke, MIN_SEGMENT_LENGTH);
   if (pts.length === 0) return [];
-  if (pts.length === 1) return circle(pts[0]!, r, DOT_SEGMENTS);
+  if (pts.length === 1) return [disc(pts[0]!, r)];
 
-  const perps: Point[] = [];
+  const contours: Contour[] = [];
+  for (const p of pts) contours.push(disc(p, r));
+
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i]!;
     const b = pts[i + 1]!;
     const dx = b.x - a.x;
     const dy = b.y - a.y;
     const len = Math.hypot(dx, dy);
-    perps.push({ x: -dy / len, y: dx / len });
+    if (len < 1e-6) continue;
+    const px = (-dy / len) * r;
+    const py = (dx / len) * r;
+    // Order chosen so the quad is CCW in font space (y-up) after toFontY flip.
+    contours.push([
+      { x: a.x + px, y: a.y + py },
+      { x: b.x + px, y: b.y + py },
+      { x: b.x - px, y: b.y - py },
+      { x: a.x - px, y: a.y - py },
+    ]);
   }
 
-  const offsets: Point[] = new Array(pts.length);
-  offsets[0] = perps[0]!;
-  offsets[pts.length - 1] = perps[perps.length - 1]!;
+  return contours;
+}
+
+// Distance-based decimation. Canvas sampling produces ~80 nearly-collinear
+// points per stroke; keeping all of them blows up the contour count without
+// improving fidelity at glyph scale. We always preserve the first and last
+// point so the stroke doesn't visually shorten.
+function simplify(pts: ReadonlyArray<Point>, minDist: number): Point[] {
+  if (pts.length === 0) return [];
+  const out: Point[] = [{ x: pts[0]!.x, y: pts[0]!.y }];
   for (let i = 1; i < pts.length - 1; i++) {
-    offsets[i] = miterOffset(perps[i - 1]!, perps[i]!);
+    const p = pts[i]!;
+    const last = out[out.length - 1]!;
+    if (Math.hypot(p.x - last.x, p.y - last.y) >= minDist) {
+      out.push({ x: p.x, y: p.y });
+    }
   }
-
-  const left: Point[] = pts.map((p, i) => ({
-    x: p.x + offsets[i]!.x * r,
-    y: p.y + offsets[i]!.y * r,
-  }));
-  const right: Point[] = pts.map((p, i) => ({
-    x: p.x - offsets[i]!.x * r,
-    y: p.y - offsets[i]!.y * r,
-  }));
-
-  const startOutward = unit({ x: pts[0]!.x - pts[1]!.x, y: pts[0]!.y - pts[1]!.y });
-  const endOutward = unit({
-    x: pts[pts.length - 1]!.x - pts[pts.length - 2]!.x,
-    y: pts[pts.length - 1]!.y - pts[pts.length - 2]!.y,
-  });
-
-  const startCap = capArc(pts[0]!, perps[0]!, startOutward, r);
-  const endCap = capArc(pts[pts.length - 1]!, perps[perps.length - 1]!, endOutward, r);
-
-  return [...right, ...endCap, ...left.slice().reverse(), ...startCap];
-}
-
-function miterOffset(prev: Point, next: Point): Point {
-  let mx = prev.x + next.x;
-  let my = prev.y + next.y;
-  const mlen = Math.hypot(mx, my);
-  if (mlen < 1e-6) return prev;
-  mx /= mlen;
-  my /= mlen;
-  const cosHalf = mx * prev.x + my * prev.y;
-  const k = cosHalf > MITER_COS_LIMIT ? 1 / cosHalf : 1 / MITER_COS_LIMIT;
-  return { x: mx * k, y: my * k };
-}
-
-// Half-circle arc from -perp side to +perp side, bulging in the `outward` direction.
-function capArc(center: Point, perp: Point, outward: Point, r: number): Point[] {
-  const out: Point[] = [];
-  for (let i = 1; i < CAP_SEGMENTS; i++) {
-    const theta = -Math.PI / 2 + Math.PI * (i / CAP_SEGMENTS);
-    const c = Math.cos(theta);
-    const s = Math.sin(theta);
-    out.push({
-      x: center.x + (outward.x * c + perp.x * s) * r,
-      y: center.y + (outward.y * c + perp.y * s) * r,
-    });
+  const lastSrc = pts[pts.length - 1]!;
+  const lastOut = out[out.length - 1]!;
+  if (lastSrc.x !== lastOut.x || lastSrc.y !== lastOut.y) {
+    out.push({ x: lastSrc.x, y: lastSrc.y });
   }
   return out;
 }
 
-function circle(center: Point, r: number, segments: number): Point[] {
+function disc(center: Point, r: number): Point[] {
   const out: Point[] = [];
-  for (let i = 0; i < segments; i++) {
-    const theta = (i / segments) * Math.PI * 2;
+  // Negative sweep so the disc is CCW in font-y-up after the toFontY flip,
+  // matching the quad winding so non-zero fill treats them as one region.
+  for (let i = 0; i < DISC_SEGMENTS; i++) {
+    const theta = -(i / DISC_SEGMENTS) * Math.PI * 2;
     out.push({ x: center.x + Math.cos(theta) * r, y: center.y + Math.sin(theta) * r });
   }
   return out;
-}
-
-function dedupe(pts: ReadonlyArray<Point>): Point[] {
-  const out: Point[] = [];
-  for (const p of pts) {
-    const last = out[out.length - 1];
-    if (!last || last.x !== p.x || last.y !== p.y) out.push({ x: p.x, y: p.y });
-  }
-  return out;
-}
-
-function unit(v: Point): Point {
-  const len = Math.hypot(v.x, v.y);
-  if (len === 0) return { x: 1, y: 0 };
-  return { x: v.x / len, y: v.y / len };
 }
 
 function glyphName(codePoint: number): string {
