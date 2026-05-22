@@ -50,6 +50,17 @@
   --color-danger-800: #991b1b;
   --color-danger-900: #7f1d1d;
 
+  --color-warn-50: #fffbeb;
+  --color-warn-100: #fef3c7;
+  --color-warn-200: #fde68a;
+  --color-warn-300: #fcd34d;
+  --color-warn-400: #fbbf24;
+  --color-warn-500: #f59e0b;
+  --color-warn-600: #d97706;
+  --color-warn-700: #b45309;
+  --color-warn-800: #92400e;
+  --color-warn-900: #78350f;
+
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
