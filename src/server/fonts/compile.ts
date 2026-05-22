@@ -28,8 +28,18 @@ export function compileFont(input: CompileFontInput): ArrayBuffer {
     path: new Path(),
   });
 
-  const otGlyphs: Glyph[] = [notdef];
+  // Empty space glyph so typing a space (extremely common) doesn't break the
+  // text run and flip the active font back to the system fallback.
+  const space = new Glyph({
+    name: 'space',
+    unicode: 0x20,
+    advanceWidth: GLYPH_UPM / 3,
+    path: new Path(),
+  });
+
+  const otGlyphs: Glyph[] = [notdef, space];
   for (const g of input.glyphs) {
+    if (g.codePoint === 0x20) continue;
     otGlyphs.push(buildGlyph(g));
   }
 
@@ -41,6 +51,13 @@ export function compileFont(input: CompileFontInput): ArrayBuffer {
     descender: -(GLYPH_UPM - BASELINE_Y),
     glyphs: otGlyphs,
   });
+
+  // OpenType leaves these at zero by default, which makes macOS Font Book
+  // guess the font's script from system locale — often CJK. Declaring Basic
+  // Latin / Latin-1 explicitly fixes the classification.
+  const os2 = font.tables.os2!;
+  os2.ulUnicodeRange1 = 1 << 0;
+  os2.ulCodePageRange1 = 1 << 0;
 
   return font.toArrayBuffer();
 }
