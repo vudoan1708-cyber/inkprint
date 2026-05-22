@@ -24,24 +24,79 @@ function makeReq(body: unknown): NextRequest {
   });
 }
 
+async function setGlyphRows(rows: unknown[]): Promise<void> {
+  const { supabaseAdmin } = await import('@/lib/supabase/admin');
+  (supabaseAdmin.from as Mock).mockReturnValue(chainMock({ data: rows, error: null }));
+}
+
 describe('POST /api/fonts/generate', () => {
-  beforeEach(async () => {
+  beforeEach(() => {
     vi.clearAllMocks();
-    const { supabaseAdmin } = await import('@/lib/supabase/admin');
-    (supabaseAdmin.from as Mock).mockReturnValue(
-      chainMock({ data: { id: 'job-uuid-1' }, error: null }),
-    );
   });
 
-  it('enqueues a font_generate job and returns 202 with the job id', async () => {
+  it('compiles and returns an OTF binary with attachment headers', async () => {
+    await setGlyphRows([
+      {
+        code_point: 65,
+        width: 1000,
+        svg_path: 'M100 100L200 200L300 100',
+        strokes: [
+          [
+            { x: 100, y: 100, pressure: 0.5 },
+            { x: 200, y: 200, pressure: 0.5 },
+            { x: 300, y: 100, pressure: 0.5 },
+          ],
+        ],
+      },
+      {
+        code_point: 66,
+        width: 1000,
+        svg_path: 'M100 100L100 900L500 900L500 100',
+        strokes: [
+          [
+            { x: 100, y: 100, pressure: 0.5 },
+            { x: 100, y: 900, pressure: 0.5 },
+            { x: 500, y: 900, pressure: 0.5 },
+            { x: 500, y: 100, pressure: 0.5 },
+          ],
+        ],
+      },
+    ]);
+
     const POST = await loadHandler();
     const res = await POST(makeReq({ userId: TEST_USER_ID, familyName: 'My Font' }));
-    expect(res.status).toBe(202);
-    const body = await res.json();
-    expect(body).toEqual({ ok: true, data: { jobId: 'job-uuid-1' } });
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('font/otf');
+    expect(res.headers.get('content-disposition')).toBe('attachment; filename="my-font.otf"');
+
+    const buffer = await res.arrayBuffer();
+    expect(buffer.byteLength).toBeGreaterThan(0);
+    // OTF / CFF magic: 'OTTO' (0x4F 0x54 0x54 0x4F)
+    const head = new Uint8Array(buffer.slice(0, 4));
+    expect(String.fromCharCode(...head)).toBe('OTTO');
 
     const { supabaseAdmin } = await import('@/lib/supabase/admin');
-    expect(supabaseAdmin.from).toHaveBeenCalledWith('jobs');
+    expect(supabaseAdmin.from).toHaveBeenCalledWith('glyphs');
+  });
+
+  it('falls back to parsing svg_path when strokes is null', async () => {
+    await setGlyphRows([
+      {
+        code_point: 65,
+        width: 1000,
+        svg_path: 'M100 100L200 200L300 100',
+        strokes: null,
+      },
+    ]);
+
+    const POST = await loadHandler();
+    const res = await POST(makeReq({ userId: TEST_USER_ID, familyName: 'Legacy' }));
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('font/otf');
+    const buffer = await res.arrayBuffer();
+    expect(buffer.byteLength).toBeGreaterThan(0);
   });
 
   it('returns 400 INVALID_JSON when body is not valid JSON', async () => {
@@ -73,7 +128,16 @@ describe('POST /api/fonts/generate', () => {
     expect(body.error.code).toBe('VALIDATION_ERROR');
   });
 
-  it('returns 500 ENQUEUE_FAILED when supabase insert errors', async () => {
+  it('returns 400 NO_GLYPHS when the user has no saved glyphs', async () => {
+    await setGlyphRows([]);
+    const POST = await loadHandler();
+    const res = await POST(makeReq({ userId: TEST_USER_ID, familyName: 'Empty' }));
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('NO_GLYPHS');
+  });
+
+  it('returns 500 QUERY_FAILED when supabase select errors', async () => {
     const { supabaseAdmin } = await import('@/lib/supabase/admin');
     (supabaseAdmin.from as Mock).mockReturnValue(
       chainMock({ data: null, error: { message: 'db down' } }),
@@ -82,7 +146,7 @@ describe('POST /api/fonts/generate', () => {
     const res = await POST(makeReq({ userId: TEST_USER_ID, familyName: 'My Font' }));
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error.code).toBe('ENQUEUE_FAILED');
+    expect(body.error.code).toBe('QUERY_FAILED');
     expect(body.error.message).toBe('db down');
   });
 });

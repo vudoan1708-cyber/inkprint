@@ -6,6 +6,45 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-22 — Drop the job queue; compile fonts synchronously
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** Smoke-testing the Generate Font flow exposed that the job pipeline had never actually run end-to-end: clicking Generate inserted a `jobs` row that sat at `status: 'pending'` forever, because no webhook had been created and the consumer endpoint was never invoked.
+
+**Context**
+
+The original backend design (carried over from `references/BACKEND.md`) used a database-driven queue: `POST /api/fonts/generate` enqueued a `font_generate` job, a Supabase webhook would fire on insert, the consumer endpoint claimed via `claim_job` RPC, a worker compiled the font, and the client subscribed over Realtime for the result. That design made sense for the *scan pipeline* it was built for — paper-template uploads needing 10–30s of OCR, segmentation, and vectorisation, with checkpoints worth streaming to the UI.
+
+The product has since pivoted to in-browser stroke capture. There are no scans, no image processing, no multi-step pipeline. Font compile is the only server-side work, and opentype.js on ≤100 glyphs runs in well under two seconds. Every original reason for async — request timeouts, transient failures, multi-step progress, durability if a worker crashes — no longer applies. The queue had become infrastructure justified only by symmetry with a pipeline that no longer exists.
+
+**Decision**
+
+Compile fonts synchronously in `/api/fonts/generate`. The route reads glyphs from Supabase, runs opentype.js inline, and returns the OTF bytes in the response body with `Content-Disposition: attachment`. The browser handles the download natively. No queue, no webhook, no Realtime subscription, no worker process.
+
+The queue infrastructure (`jobs` table, `claim_job` RPC, `/api/worker/process` route, worker dispatcher, `WORKER_SECRET` env var) is removed entirely, both at the application layer and via migration `00006_drop_queue_infrastructure.sql`. If a genuinely async pipeline ever returns (batch exports, server-side rasterisation, scan ingestion), it gets designed fresh against the requirements that justify it.
+
+**Rationale**
+
+- **Matches the work.** Sub-2-second compile is the wrong shape for a durable async queue; it is the right shape for an HTTP request.
+- **One round-trip, no return channel.** Anonymous users (v1's default) never persist anything to R2 — there was no place for the worker to put the bytes for them anyway. Returning bytes in the response collapses both branches.
+- **Removes operational surface.** No webhook to configure in Supabase, no tunnel needed for local dev, no shared secret to rotate, no orphaned `pending` jobs to monitor.
+- **Smaller, more honest codebase.** Two API routes deleted, three modules deleted, one env var removed, one migration that drops three database objects.
+
+**UX implications**
+
+Generation is in the 0.5–2.5s band for typical glyph sets and worst-case ~5s on cold serverless starts or large fonts. The Generate Font button now follows a four-state UX: `submitting` (spinner, immediate), `slow` (after 3s, soft reassurance copy), `success` (download triggered, filename surfaced), `error` (incl. a 15s hard timeout with retry messaging). No fake progress bars — an indeterminate spinner is the honest signal when no real progress is available.
+
+**Impact**
+
+- Removed: `src/server/queue/worker.ts`, `src/app/api/worker/process/route.ts` (+ test), `src/types/jobTypes.ts`, `WORKER_SECRET` from `src/lib/env.ts`.
+- Added: `src/server/fonts/compile.ts` (uniform-width stroke-to-outline + opentype.js compile), `opentype.js` dependency.
+- Replaced: body of `/api/fonts/generate`, client `requestFontGeneration` (now triggers a browser download), `GenerateFontSection` state machine.
+- Migration: `00006_drop_queue_infrastructure.sql` drops `jobs`, `idx_jobs_pending`, `claim_job`.
+- Open follow-ups (deliberately not in this change): variable-width strokes using stored pressure values; per-glyph advance widths (currently every glyph gets full-em width, producing a monospace feel); R2 persistence for signed-in users when auth lands.
+
+---
+
 ## 2026-05-21 — Defer real user accounts until the marketplace; v1 stays anonymous
 
 **Status:** Accepted
