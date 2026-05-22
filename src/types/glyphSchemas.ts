@@ -13,6 +13,9 @@ export const strokePointSchema = z.object({
 export const strokeSchema = z.array(strokePointSchema).max(2000);
 export const strokesSchema = z.array(strokeSchema).max(64);
 
+export const glyphSourceSchema = z.enum(['drawn', 'composed']);
+export type GlyphSource = z.infer<typeof glyphSourceSchema>;
+
 export const glyphUpsertSchema = z.object({
   userId: z.uuid(),
   svgPath: z
@@ -24,6 +27,7 @@ export const glyphUpsertSchema = z.object({
   quality: z.number().min(0).max(1).optional(),
   strokes: strokesSchema.optional(),
   smoothingApplied: z.boolean().optional(),
+  source: glyphSourceSchema.optional(),
 });
 
 export type GlyphUpsertInput = z.infer<typeof glyphUpsertSchema>;

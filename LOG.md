@@ -6,6 +6,65 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-22 — Auto-compose diacritics from accent primitives
+
+**Status:** Accepted (Phase 1a — procedural composition only)
+**Owner:** Vu Doan
+**Trigger:** Competitive research established that no incumbent in the handwriting-font space (Calligraphr, FontCraft, iFontMaker, Fontself) auto-generates *any* glyphs — users hand-draw all 60–600 characters themselves. Inkprint's stroke-based capture is a structural advantage we hadn't exploited.
+
+**Context**
+
+Drawing 94 (or 600) glyphs is the dominant time sink for users producing a personal font. The labour grows roughly linearly with the language coverage requested. Pure Latin Basic users already balk at 71 hand-drawn glyphs; Vietnamese users would face ~150 lowercase forms alone if asked to draw every tone × vowel combination by hand. Competitive products treat this as an inherent property of the medium because they store glyphs as bitmaps (Calligraphr, FontCraft) — bitmap composition produces visible seams and artefacts, so they don't attempt it.
+
+Inkprint already stores every glyph as a vector stroke sequence (`StrokePoint[]` in a 1000-unit em space), with full spatial freedom and pressure preserved. Vector composition — translate, stack, concatenate — produces results that are byte-for-byte identical to a hand-drawn glyph with the same strokes. There is no quality penalty, no "looks composed" tell.
+
+The full plan considers three tiers (procedural composition, retrieval, ML extrapolation). This decision covers Tier 1 only.
+
+**Decision**
+
+Add a "Western European & Vietnamese" character set built around 9 user-drawn accent primitives (acute, grave, circumflex, diaeresis, tilde, breve, hook above, dot below, horn). Compose ~75 lowercase diacritic targets — every Western European Latin-1 Supplement letter plus the full Vietnamese tone × vowel-modifier matrix (ấ, ổ, ử, ừ, ự, ỡ, ỹ, etc.) — by stacking primitives over base letters the user already drew. Multi-mark recipes are supported, so chained forms like ổ (o + circumflex + hook) compose in one pass via dependency-ordered topology.
+
+Auto-composed glyphs are persisted in the same `glyphs` table as hand-drawn ones, distinguished only by a new `source` column (`'drawn' | 'composed'`). They appear in the grid as regular cells with a small ✨ badge, and **open in the existing drawing/edit modal unchanged**: tweaking a composed glyph is the same operation as tweaking a hand-drawn one. The moment a user edits a composed glyph and saves, its source flips to `'drawn'` and the auto-filler will never overwrite it.
+
+Capitals, retrieval-based borrowing from Google Fonts, and stroke-conditional ML extrapolation are explicitly **out of scope** for this phase. They remain on the Phase 2 list.
+
+**Rationale**
+
+- **The composition is lossless.** Vector strokes carry pressure and the user's own line characteristics; placing them above a base preserves both. The composed `à` looks as hand-drawn as the `a` and the `\`` it came from, because it *is* those strokes.
+- **It's a "review and tweak" UX, not an "AI approval" UX.** Composed glyphs aren't a different first-class type; they're regular glyphs with a tag. The user never has to learn a new editor or commit to AI output — they tweak the same way they'd tweak any glyph.
+- **Vietnamese users get an immediately useful product.** Without composition, a Vietnamese font needs ~150 lowercase hand-drawn glyphs. With composition + 9 mark primitives + 26 lowercase bases + 6 modified vowels (ă, â, ê, ô, ơ, ư) = ~41 hand-drawn glyphs, the remaining ~75 are derived. Roughly a 65% reduction in manual work.
+- **No ML risk in Phase 1.** Pure geometry, no inference latency, no model hosting, no quality variance across users. Ships independently of Phase 2.
+- **Dependency-ordered composition.** Vietnamese forces a chain: ổ depends on ô, which depends on o. The composer pre-sorts recipes topologically so a single pass over `composeAll` resolves everything.
+
+**UX implications**
+
+The "Vietnamese & Western European" set replaces what would have been a stratified seed/full split. The grid renders ~155 cells; 9 of them (the accent primitives) carry text labels like "Hook above" instead of an empty glyph slot, because their Unicode code points (U+E000–U+E002, PUA) have no system-font renderings. PUA cells also use a `◌̛`-style dotted-circle ghost on the canvas so the user can see the mark shape they're tracing.
+
+After drawing primitives + bases, a brand-tinted banner appears above the grid: *"X diacritic letters ready to auto-fill"* with a Sparkles button. One tap composes every resolvable target. Composed cells gain a small ✨ corner badge so the user knows which ones to review. The badge stays until the user saves an edit, at which point the cell becomes indistinguishable from a hand-drawn one.
+
+The basic Latin set (`latin-basic`, 71 chars) is unchanged — there's no migration burden for existing English-only users.
+
+**Impact**
+
+- **New:**
+  - `src/lib/glyphComposition.ts` + tests — 9 mark positions, ~75 recipes, dependency-ordered `composeAll`, i/j tittle stripping (tight "fully above" check so it doesn't nuke a t-bar).
+  - `latin-extended` entry in `src/lib/characterSets.ts` with 9 primitives + 75 composable targets.
+  - `PRIMITIVE_LABELS` / `PRIMITIVE_GHOSTS` / `glyphDisplayLabel` / `glyphGhostChar` helpers for PUA cells.
+  - Auto-fill section in `InkprintApp.tsx` (banner + Sparkles button + result toasts).
+  - Migration `00008_add_source_to_glyphs.sql`.
+- **Modified:**
+  - `glyphs` table gets a `source` column (`'drawn' | 'composed'`, backfilled to `'drawn'`).
+  - `GlyphRecord` / Zod schemas / both API routes plumb `source` through.
+  - `GlyphCell` renders the ✨ badge and primitive labels.
+  - `DrawingModal` shows the role label in the header for PUA primitives and the dotted-circle ghost on the canvas.
+- **Deliberately deferred:**
+  - Uppercase diacritics (À, Á, Ă, Ơ, Ư, etc.).
+  - "Recompose composed glyphs" UX after a primitive is later tweaked. Today, composing again only fills empty cells; refreshing stale composed glyphs is a manual round-trip.
+  - Bulk `/api/glyphs` endpoint. Auto-fill currently fires N parallel PUTs (~75 worst-case). Acceptable for the v1 user base; collapses to one round-trip when it becomes a bottleneck.
+  - Phase 2 (retrieval and ML extrapolation).
+
+---
+
 ## 2026-05-22 — Drop the job queue; compile fonts synchronously
 
 **Status:** Accepted

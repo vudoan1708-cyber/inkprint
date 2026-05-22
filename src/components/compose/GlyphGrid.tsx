@@ -1,16 +1,24 @@
 'use client';
 
 import { GlyphCell } from './GlyphCell';
+import type { GlyphSource } from '@/types/glyphSchemas';
 import { cn } from '@/lib/cn';
 
 type Props = {
   codePoints: readonly number[];
   glyphsByCodePoint: Map<number, string>;
+  sourceByCodePoint?: Map<number, GlyphSource>;
   onSelect: (codePoint: number) => void;
   className?: string;
 };
 
-export function GlyphGrid({ codePoints, glyphsByCodePoint, onSelect, className }: Props) {
+export function GlyphGrid({
+  codePoints,
+  glyphsByCodePoint,
+  sourceByCodePoint,
+  onSelect,
+  className,
+}: Props) {
   return (
     <div
       role="grid"
@@ -25,6 +33,7 @@ export function GlyphGrid({ codePoints, glyphsByCodePoint, onSelect, className }
           key={codePoint}
           codePoint={codePoint}
           svgPath={glyphsByCodePoint.get(codePoint) ?? null}
+          source={sourceByCodePoint?.get(codePoint) ?? null}
           onSelect={onSelect}
         />
       ))}

@@ -12,6 +12,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
 import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 import { smoothStrokes } from '@/lib/smoothing';
+import { glyphDisplayLabel, glyphGhostChar } from '@/lib/characterSets';
 
 type Props = {
   codePoint: number;
@@ -41,7 +42,8 @@ export function DrawingModal({
   const preSmoothSnapshotRef = useRef<Stroke[] | null>(null);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
 
-  const character = String.fromCodePoint(codePoint);
+  const character = glyphGhostChar(codePoint);
+  const titleLabel = glyphDisplayLabel(codePoint);
   const hasStrokes = strokeCount > 0;
 
   useEffect(() => {
@@ -111,7 +113,7 @@ export function DrawingModal({
                 ref={headingRef}
                 className="text-2xl font-semibold text-surface-900 outline-none dark:text-surface-50 sm:text-3xl"
               >
-                {character}
+                {titleLabel}
                 <span className="ms-3 align-middle text-sm font-normal text-surface-500">
                   U+{codePoint.toString(16).toUpperCase().padStart(4, '0')}
                 </span>
