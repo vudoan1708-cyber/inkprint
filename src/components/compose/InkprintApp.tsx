@@ -24,20 +24,25 @@ import { GlyphGrid } from './GlyphGrid';
 import { DrawingModal } from './DrawingModal';
 import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
+import { StageStrip, STAGE_SECTION_IDS } from './StageStrip';
+import { Textarea } from '@/components/ui/Textarea';
+
+const PANGRAM = 'The quick brown fox jumps over the lazy dog.';
+const FLASH_RESET_MS = 800;
+
+type Stage = 'draft' | 'test' | 'print';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
 import { Select } from '@/components/ui/Select';
 import { Snackbar } from '@/components/ui/Snackbar';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
-import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toaster';
 import { cn } from '@/lib/cn';
 
 const CHARACTER_SET = CHARACTER_SETS['latin-extended'];
 
 type LoadState = 'pending' | 'loaded' | 'error';
-type MobileTab = 'draw' | 'preview';
 
 const AUTOFILL_TOAST_ID = 'autofill-prompt';
 const SNACKBAR_PREVIEW_LIMIT = 12;
@@ -53,8 +58,26 @@ export function InkprintApp() {
   const [selectedTab, setSelectedTab] = useState<GlyphTab>('lowercase');
   const [hideOptionalByTab, setHideOptionalByTab] = useState<Map<GlyphTab, boolean>>(new Map());
   const [activeCodePoint, setActiveCodePoint] = useState<number | null>(null);
-  const [mobileTab, setMobileTab] = useState<MobileTab>('draw');
   const [isAutoFilling, setIsAutoFilling] = useState(false);
+  // Bumped per click so the heading re-keys and the flash replays.
+  const [flashTicks, setFlashTicks] = useState<Record<Stage, number>>({
+    draft: 0,
+    test: 0,
+    print: 0,
+  });
+  const [flashedStage, setFlashedStage] = useState<Stage | null>(null);
+  const [testText, setTestText] = useState<string>(PANGRAM);
+
+  const handleStageClickFlash = (stage: Stage): void => {
+    setFlashedStage(stage);
+    setFlashTicks((prev) => ({ ...prev, [stage]: prev[stage] + 1 }));
+  };
+
+  useEffect(() => {
+    if (!flashedStage) return;
+    const t = setTimeout(() => setFlashedStage(null), FLASH_RESET_MS);
+    return () => clearTimeout(t);
+  }, [flashedStage, flashTicks]);
 
   const characterSet = CHARACTER_SET;
 
@@ -283,27 +306,32 @@ export function InkprintApp() {
         </p>
       </header>
 
-      <Tabs
-        ariaLabel="View"
-        options={[
-          { value: 'draw', label: 'Draw' },
-          { value: 'preview', label: 'Preview' },
-        ]}
-        value={mobileTab}
-        onChange={setMobileTab}
-        className="self-start sm:hidden"
+      <StageStrip
+        drawnCount={glyphsByCodePoint.size}
+        totalCount={characterSet.codePoints.length}
+        onStageClick={handleStageClickFlash}
       />
 
       <section
-        aria-labelledby="glyph-tab-heading"
-        className={cn(
-          'flex flex-col gap-3',
-          mobileTab === 'draw' ? '' : 'hidden sm:flex',
-        )}
+        id={STAGE_SECTION_IDS.draft}
+        aria-labelledby="draft-heading"
+        className="flex scroll-mt-24 flex-col gap-6"
       >
-        <h2 id="glyph-tab-heading" className="sr-only">
-          Glyph category
-        </h2>
+        <div>
+          <h2
+            id="draft-heading"
+            key={`draft-${flashTicks.draft}`}
+            className={cn(
+              'inline-block text-2xl font-semibold text-surface-900 dark:text-surface-50',
+              flashedStage === 'draft' && 'flash-once',
+            )}
+          >
+            Draft
+          </h2>
+          <p className="mt-1 text-sm text-surface-600 dark:text-surface-300">
+            Sketch every letter and mark you want in your font.
+          </p>
+        </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div
             role="tablist"
@@ -375,18 +403,14 @@ export function InkprintApp() {
             </Button>
           ) : null}
         </div>
-      </section>
 
-      <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
         <ProgressBar
           label={GLYPH_TAB_LABELS[selectedTab]}
           value={tabCodePoints.filter((cp) => glyphsByCodePoint.has(cp)).length}
           max={tabCodePoints.length}
           valueText={`${tabCodePoints.filter((cp) => glyphsByCodePoint.has(cp)).length} / ${tabCodePoints.length}`}
         />
-      </div>
 
-      <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
         <LoadStateBoundary loadState={loadState} loadError={loadError}>
           <GlyphGrid
             codePoints={tabCodePoints}
@@ -395,42 +419,66 @@ export function InkprintApp() {
             onSelect={setActiveCodePoint}
           />
         </LoadStateBoundary>
-      </div>
+      </section>
 
       <section
-        aria-labelledby="preview-heading"
-        className={cn(
-          'flex flex-col gap-3',
-          mobileTab === 'preview' ? '' : 'hidden sm:flex',
-        )}
+        id={STAGE_SECTION_IDS.test}
+        aria-labelledby="test-heading"
+        className="flex scroll-mt-24 flex-col gap-4"
       >
-        <h2
-          id="preview-heading"
-          className="text-sm font-medium text-surface-700 dark:text-surface-200"
-        >
-          Live preview
-        </h2>
+        <div>
+          <h2
+            id="test-heading"
+            key={`test-${flashTicks.test}`}
+            className={cn(
+              'inline-block text-2xl font-semibold text-surface-900 dark:text-surface-50',
+              flashedStage === 'test' && 'flash-once',
+            )}
+          >
+            Test
+          </h2>
+          <p className="mt-1 text-sm text-surface-600 dark:text-surface-300">
+            Type anything to see your font in action.
+          </p>
+        </div>
+        <Textarea
+          label="Try your font"
+          hideLabel
+          value={testText}
+          onChange={(e) => setTestText(e.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder="Type a name, a sentence, your favourite quote…"
+        />
         <div className="rounded-2xl border border-surface-200 bg-surface-50 p-4 dark:border-surface-700 dark:bg-surface-900">
           <FontPreview
             glyphsByCodePoint={glyphsByCodePoint}
             strokesByCodePoint={strokesByCodePoint}
+            sampleText={testText.length > 0 ? testText : PANGRAM}
           />
         </div>
       </section>
 
       <section
-        aria-labelledby="generate-heading"
-        className={cn(
-          'flex flex-col gap-3',
-          mobileTab === 'draw' ? '' : 'hidden sm:flex',
-        )}
+        id={STAGE_SECTION_IDS.print}
+        aria-labelledby="print-heading"
+        className="flex scroll-mt-24 flex-col gap-4"
       >
-        <h2
-          id="generate-heading"
-          className="text-sm font-medium text-surface-700 dark:text-surface-200"
-        >
-          Compile font
-        </h2>
+        <div>
+          <h2
+            id="print-heading"
+            key={`print-${flashTicks.print}`}
+            className={cn(
+              'inline-block text-2xl font-semibold text-surface-900 dark:text-surface-50',
+              flashedStage === 'print' && 'flash-once',
+            )}
+          >
+            Print
+          </h2>
+          <p className="mt-1 text-sm text-surface-600 dark:text-surface-300">
+            Name your font and download the .otf.
+          </p>
+        </div>
         {userId ? (
           <GenerateFontSection userId={userId} drawnGlyphCount={glyphsByCodePoint.size} />
         ) : (

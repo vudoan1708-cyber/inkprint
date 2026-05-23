@@ -83,8 +83,6 @@ export function Select<T extends string>({
   });
 
   const click = useClick(context);
-  // 'click' (vs default 'pointerdown') so a drag-scroll gesture on mobile
-  // — which never fires a click — doesn't dismiss the dropdown.
   const dismiss = useDismiss(context, { outsidePressEvent: 'click' });
   const role = useRole(context, { role: 'listbox' });
   const listNav = useListNavigation(context, {
