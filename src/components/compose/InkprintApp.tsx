@@ -12,12 +12,7 @@ import {
 } from '@/lib/characterSets';
 import { useUserId } from '@/lib/userId';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
-import {
-  listGlyphs,
-  upsertGlyph,
-  upsertGlyphsBulk,
-  type GlyphRecord,
-} from '@/lib/apiClient';
+import { createGlyphStore, type GlyphRecord, type GlyphStore } from '@/lib/glyphStore';
 import { composeAll } from '@/lib/glyphComposition';
 import type { GlyphSource } from '@/types/glyphSchemas';
 import { GlyphGrid } from './GlyphGrid';
@@ -81,10 +76,16 @@ export function InkprintApp() {
 
   const characterSet = CHARACTER_SET;
 
+  const store = useMemo<GlyphStore | null>(
+    () => (userId ? createGlyphStore({ userId }) : null),
+    [userId],
+  );
+
   useEffect(() => {
-    if (!userId) return;
+    if (!store) return;
     let cancelled = false;
-    listGlyphs(userId)
+    store
+      .list()
       .then((glyphs) => {
         if (cancelled) return;
         setGlyphsByCodePoint(buildGlyphMap(glyphs));
@@ -101,7 +102,7 @@ export function InkprintApp() {
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [store]);
 
   // Composable targets grouped by tab. Each tab's snackbar + ✨ badge are
   // driven by its own list — clears only when that tab's auto-compose runs.
@@ -165,9 +166,8 @@ export function InkprintApp() {
     strokes: Stroke[],
     smoothingApplied: boolean,
   ): Promise<void> => {
-    if (!userId || activeCodePoint === null) return;
-    await upsertGlyph({
-      userId,
+    if (!store || activeCodePoint === null) return;
+    await store.upsert({
       codePoint: activeCodePoint,
       svgPath,
       width: GLYPH_UPM,
@@ -202,7 +202,7 @@ export function InkprintApp() {
   // chained dependencies span tabs), then we keep only the targets that live
   // in the current tab and write those back.
   const handleAutoFill = useCallback(async (): Promise<void> => {
-    if (!userId) return;
+    if (!store) return;
     const targetCodePoints = new Set(composableTargetsByTab[selectedTab]);
     if (targetCodePoints.size === 0) return;
     setIsAutoFilling(true);
@@ -218,16 +218,15 @@ export function InkprintApp() {
       return;
     }
     try {
-      await upsertGlyphsBulk({
-        userId,
-        glyphs: Array.from(produced, ([codePoint, strokes]) => ({
+      await store.upsertBulk(
+        Array.from(produced, ([codePoint, strokes]) => ({
           codePoint,
           svgPath: strokesToSvgPath(strokes),
           width: GLYPH_UPM,
           strokes,
           source: 'composed',
         })),
-      });
+      );
     } catch (error) {
       setIsAutoFilling(false);
       toast.error(error instanceof Error ? error.message : 'Auto-fill failed.');
@@ -254,7 +253,7 @@ export function InkprintApp() {
     toast.success(
       `Auto-composed ${produced.size} ${tabLabel} letter${produced.size === 1 ? '' : 's'}. Tap any to tweak.`,
     );
-  }, [userId, selectedTab, composableTargetsByTab, sourceByCodePoint, strokesByCodePoint]);
+  }, [store, selectedTab, composableTargetsByTab, sourceByCodePoint, strokesByCodePoint]);
 
   // Snackbar tracks the CURRENT tab's composables. Switching tabs updates
   // the snackbar contents; emptying the list or hiding optional dismisses it.
