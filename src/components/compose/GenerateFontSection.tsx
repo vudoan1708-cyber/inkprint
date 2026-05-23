@@ -126,7 +126,7 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
       </Button>
       {showLowCoverageWarning ? (
         <p className="basis-full text-sm text-warn-700">
-          Only {drawnGlyphCount} glyph{drawnGlyphCount === 1 ? '' : 's'} drawn — characters you
+          Only {drawnGlyphCount} glyph{drawnGlyphCount === 1 ? ' ' : 's '} drawn — characters you
           haven&rsquo;t drawn will fall back to your system font.
         </p>
       ) : null}

@@ -27,6 +27,7 @@ import { GenerateFontSection } from './GenerateFontSection';
 import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
+import { Select } from '@/components/ui/Select';
 import { Snackbar } from '@/components/ui/Snackbar';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Tabs } from '@/components/ui/Tabs';
@@ -304,7 +305,11 @@ export function InkprintApp() {
           Glyph category
         </h2>
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div role="tablist" aria-label="Glyph category" className="flex flex-wrap gap-2">
+          <div
+            role="tablist"
+            aria-label="Glyph category"
+            className="hidden flex-wrap gap-2 sm:flex"
+          >
             {GLYPH_TABS.map((tab) => {
               const isActive = tab === selectedTab;
               const badge = tabBadgeCounts[tab];
@@ -332,6 +337,27 @@ export function InkprintApp() {
               );
             })}
           </div>
+          <Select
+            ariaLabel="Glyph category"
+            className="sm:hidden"
+            value={selectedTab}
+            onChange={handleSelectTab}
+            showOtherIndicator
+            options={GLYPH_TABS.map((tab) => {
+              const badge = tabBadgeCounts[tab];
+              return {
+                value: tab,
+                label: GLYPH_TAB_LABELS[tab],
+                badge:
+                  badge > 0 ? (
+                    <span className="flex items-center gap-1">
+                      <Sparkles className="size-4 text-amber-400" aria-hidden />
+                      <span className="font-mono text-xs opacity-70">{badge}</span>
+                    </span>
+                  ) : undefined,
+              };
+            })}
+          />
           {tabHasOptional ? (
             <Button
               variant="ghost"
