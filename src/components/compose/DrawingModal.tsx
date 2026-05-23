@@ -217,7 +217,7 @@ export function DrawingModal({
                   Smooth {smoothingEnabled ? 'on' : 'off'}
                 </Button>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="ms-auto flex flex-wrap gap-2">
                 <Button variant="ghost" onClick={onClose}>
                   Skip
                 </Button>

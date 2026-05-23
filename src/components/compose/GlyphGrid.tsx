@@ -1,6 +1,7 @@
 'use client';
 
 import { GlyphCell } from './GlyphCell';
+import { isOptionalCodePoint } from '@/lib/characterSets';
 import type { GlyphSource } from '@/types/glyphSchemas';
 import { cn } from '@/lib/cn';
 
@@ -34,6 +35,7 @@ export function GlyphGrid({
           codePoint={codePoint}
           svgPath={glyphsByCodePoint.get(codePoint) ?? null}
           source={sourceByCodePoint?.get(codePoint) ?? null}
+          isOptional={isOptionalCodePoint(codePoint)}
           onSelect={onSelect}
         />
       ))}

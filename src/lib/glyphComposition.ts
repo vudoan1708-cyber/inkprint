@@ -131,6 +131,97 @@ const RECIPES: Readonly<Record<number, ComposeRecipe>> = (() => {
 
     // n-tilde
     0x00f1: { base: 0x6e, marks: [TILDE] },                  // ñ
+
+    // ── uppercase variants ──────────────────────────────────────────────
+
+    // A-family
+    0x00c0: { base: 0x41, marks: [GRAVE] },                  // À
+    0x00c1: { base: 0x41, marks: [ACUTE] },                  // Á
+    0x00c2: { base: 0x41, marks: [CIRC] },                   // Â
+    0x00c3: { base: 0x41, marks: [TILDE] },                  // Ã
+    0x00c4: { base: 0x41, marks: [DIA] },                    // Ä
+    0x1ea0: { base: 0x41, marks: [DOT] },                    // Ạ
+    0x1ea2: { base: 0x41, marks: [HOOK] },                   // Ả
+    0x0102: { base: 0x41, marks: [BREVE] },                  // Ă
+    0x1eae: { base: 0x0102, marks: [ACUTE] },                // Ắ
+    0x1eb0: { base: 0x0102, marks: [GRAVE] },                // Ằ
+    0x1eb2: { base: 0x0102, marks: [HOOK] },                 // Ẳ
+    0x1eb4: { base: 0x0102, marks: [TILDE] },                // Ẵ
+    0x1eb6: { base: 0x0102, marks: [DOT] },                  // Ặ
+    0x1ea4: { base: 0x00c2, marks: [ACUTE] },                // Ấ
+    0x1ea6: { base: 0x00c2, marks: [GRAVE] },                // Ầ
+    0x1ea8: { base: 0x00c2, marks: [HOOK] },                 // Ẩ
+    0x1eaa: { base: 0x00c2, marks: [TILDE] },                // Ẫ
+    0x1eac: { base: 0x00c2, marks: [DOT] },                  // Ậ
+
+    // E-family
+    0x00c8: { base: 0x45, marks: [GRAVE] },                  // È
+    0x00c9: { base: 0x45, marks: [ACUTE] },                  // É
+    0x00ca: { base: 0x45, marks: [CIRC] },                   // Ê
+    0x00cb: { base: 0x45, marks: [DIA] },                    // Ë
+    0x1eb8: { base: 0x45, marks: [DOT] },                    // Ẹ
+    0x1eba: { base: 0x45, marks: [HOOK] },                   // Ẻ
+    0x1ebc: { base: 0x45, marks: [TILDE] },                  // Ẽ
+    0x1ebe: { base: 0x00ca, marks: [ACUTE] },                // Ế
+    0x1ec0: { base: 0x00ca, marks: [GRAVE] },                // Ề
+    0x1ec2: { base: 0x00ca, marks: [HOOK] },                 // Ể
+    0x1ec4: { base: 0x00ca, marks: [TILDE] },                // Ễ
+    0x1ec6: { base: 0x00ca, marks: [DOT] },                  // Ệ
+
+    // I-family (capital I has no tittle so the dropTittle heuristic is a no-op)
+    0x00cc: { base: 0x49, marks: [GRAVE] },                  // Ì
+    0x00cd: { base: 0x49, marks: [ACUTE] },                  // Í
+    0x00ce: { base: 0x49, marks: [CIRC] },                   // Î
+    0x00cf: { base: 0x49, marks: [DIA] },                    // Ï
+    0x0128: { base: 0x49, marks: [TILDE] },                  // Ĩ
+    0x1ec8: { base: 0x49, marks: [HOOK] },                   // Ỉ
+    0x1eca: { base: 0x49, marks: [DOT] },                    // Ị
+
+    // O-family
+    0x00d2: { base: 0x4f, marks: [GRAVE] },                  // Ò
+    0x00d3: { base: 0x4f, marks: [ACUTE] },                  // Ó
+    0x00d4: { base: 0x4f, marks: [CIRC] },                   // Ô
+    0x00d5: { base: 0x4f, marks: [TILDE] },                  // Õ
+    0x00d6: { base: 0x4f, marks: [DIA] },                    // Ö
+    0x1ecc: { base: 0x4f, marks: [DOT] },                    // Ọ
+    0x1ece: { base: 0x4f, marks: [HOOK] },                   // Ỏ
+    0x1ed0: { base: 0x00d4, marks: [ACUTE] },                // Ố
+    0x1ed2: { base: 0x00d4, marks: [GRAVE] },                // Ồ
+    0x1ed4: { base: 0x00d4, marks: [HOOK] },                 // Ổ
+    0x1ed6: { base: 0x00d4, marks: [TILDE] },                // Ỗ
+    0x1ed8: { base: 0x00d4, marks: [DOT] },                  // Ộ
+    0x01a0: { base: 0x4f, marks: [HORN] },                   // Ơ
+    0x1eda: { base: 0x01a0, marks: [ACUTE] },                // Ớ
+    0x1edc: { base: 0x01a0, marks: [GRAVE] },                // Ờ
+    0x1ede: { base: 0x01a0, marks: [HOOK] },                 // Ở
+    0x1ee0: { base: 0x01a0, marks: [TILDE] },                // Ỡ
+    0x1ee2: { base: 0x01a0, marks: [DOT] },                  // Ợ
+
+    // U-family
+    0x00d9: { base: 0x55, marks: [GRAVE] },                  // Ù
+    0x00da: { base: 0x55, marks: [ACUTE] },                  // Ú
+    0x00db: { base: 0x55, marks: [CIRC] },                   // Û
+    0x00dc: { base: 0x55, marks: [DIA] },                    // Ü
+    0x0168: { base: 0x55, marks: [TILDE] },                  // Ũ
+    0x1ee4: { base: 0x55, marks: [DOT] },                    // Ụ
+    0x1ee6: { base: 0x55, marks: [HOOK] },                   // Ủ
+    0x01af: { base: 0x55, marks: [HORN] },                   // Ư
+    0x1ee8: { base: 0x01af, marks: [ACUTE] },                // Ứ
+    0x1eea: { base: 0x01af, marks: [GRAVE] },                // Ừ
+    0x1eec: { base: 0x01af, marks: [HOOK] },                 // Ử
+    0x1eee: { base: 0x01af, marks: [TILDE] },                // Ữ
+    0x1ef0: { base: 0x01af, marks: [DOT] },                  // Ự
+
+    // Y-family
+    0x00dd: { base: 0x59, marks: [ACUTE] },                  // Ý
+    0x0178: { base: 0x59, marks: [DIA] },                    // Ÿ
+    0x1ef2: { base: 0x59, marks: [GRAVE] },                  // Ỳ
+    0x1ef4: { base: 0x59, marks: [DOT] },                    // Ỵ
+    0x1ef6: { base: 0x59, marks: [HOOK] },                   // Ỷ
+    0x1ef8: { base: 0x59, marks: [TILDE] },                  // Ỹ
+
+    // N-tilde
+    0x00d1: { base: 0x4e, marks: [TILDE] },                  // Ñ
   };
 })();
 

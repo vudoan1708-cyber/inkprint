@@ -1,8 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
-import { CHARACTER_SETS, type CharacterSetKey } from '@/lib/characterSets';
+import { Eye, EyeOff, Sparkles } from 'lucide-react';
+import {
+  CHARACTER_SETS,
+  GLYPH_TABS,
+  GLYPH_TAB_LABELS,
+  isOptionalCodePoint,
+  tabsForCodePoint,
+  type GlyphTab,
+} from '@/lib/characterSets';
 import { useUserId } from '@/lib/userId';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
 import {
@@ -15,9 +22,9 @@ import { composeAll } from '@/lib/glyphComposition';
 import type { GlyphSource } from '@/types/glyphSchemas';
 import { GlyphGrid } from './GlyphGrid';
 import { DrawingModal } from './DrawingModal';
-import { CharacterSetPicker } from './CharacterSetPicker';
 import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
+import { Button } from '@/components/ui/Button';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
 import { Snackbar } from '@/components/ui/Snackbar';
@@ -25,6 +32,8 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { Tabs } from '@/components/ui/Tabs';
 import { toast } from '@/components/ui/Toaster';
 import { cn } from '@/lib/cn';
+
+const CHARACTER_SET = CHARACTER_SETS['latin-extended'];
 
 type LoadState = 'pending' | 'loaded' | 'error';
 type MobileTab = 'draw' | 'preview';
@@ -40,12 +49,13 @@ export function InkprintApp() {
   const [sourceByCodePoint, setSourceByCodePoint] = useState<Map<number, GlyphSource>>(new Map());
   const [loadState, setLoadState] = useState<LoadState>('pending');
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [selectedSetKey, setSelectedSetKey] = useState<CharacterSetKey>('latin-basic');
+  const [selectedTab, setSelectedTab] = useState<GlyphTab>('lowercase');
+  const [hideOptionalByTab, setHideOptionalByTab] = useState<Map<GlyphTab, boolean>>(new Map());
   const [activeCodePoint, setActiveCodePoint] = useState<number | null>(null);
   const [mobileTab, setMobileTab] = useState<MobileTab>('draw');
   const [isAutoFilling, setIsAutoFilling] = useState(false);
 
-  const characterSet = CHARACTER_SETS[selectedSetKey];
+  const characterSet = CHARACTER_SET;
 
   useEffect(() => {
     if (!userId) return;
@@ -69,23 +79,62 @@ export function InkprintApp() {
     };
   }, [userId]);
 
-  const drawnInCurrentSet = useMemo(
-    () => characterSet.codePoints.filter((cp) => glyphsByCodePoint.has(cp)).length,
-    [characterSet, glyphsByCodePoint],
-  );
-
-  // List (not just count) of composable targets currently empty. Sorted so
-  // the snackbar shows a stable preview.
-  const composableTargets = useMemo<number[]>(() => {
-    if (selectedSetKey !== 'latin-extended') return [];
+  // Composable targets grouped by tab. Each tab's snackbar + ✨ badge are
+  // driven by its own list — clears only when that tab's auto-compose runs.
+  const composableTargetsByTab = useMemo<Record<GlyphTab, number[]>>(() => {
     const drawn = drawnCodePoints(sourceByCodePoint, strokesByCodePoint);
     const projected = composeAll(strokesByCodePoint, { drawnCodePoints: drawn });
-    const empty: number[] = [];
+    const out: Record<GlyphTab, number[]> = { lowercase: [], uppercase: [], numbers: [] };
     for (const cp of projected.keys()) {
-      if (!strokesByCodePoint.has(cp)) empty.push(cp);
+      if (strokesByCodePoint.has(cp)) continue;
+      for (const tab of tabsForCodePoint(cp)) out[tab].push(cp);
     }
-    return empty.sort((a, b) => a - b);
-  }, [selectedSetKey, sourceByCodePoint, strokesByCodePoint]);
+    for (const tab of GLYPH_TABS) out[tab].sort((a, b) => a - b);
+    return out;
+  }, [sourceByCodePoint, strokesByCodePoint]);
+
+  const composableInCurrentTab = composableTargetsByTab[selectedTab];
+
+  // Code points that live in the current tab, optionally filtered to non-optional.
+  const hideOptional = hideOptionalByTab.get(selectedTab) ?? false;
+  const tabCodePoints = useMemo(() => {
+    const all = characterSet.codePoints.filter((cp) =>
+      tabsForCodePoint(cp).includes(selectedTab),
+    );
+    return hideOptional ? all.filter((cp) => !isOptionalCodePoint(cp)) : all;
+  }, [characterSet, selectedTab, hideOptional]);
+
+  const tabHasOptional = useMemo(
+    () =>
+      characterSet.codePoints.some(
+        (cp) => tabsForCodePoint(cp).includes(selectedTab) && isOptionalCodePoint(cp),
+      ),
+    [characterSet, selectedTab],
+  );
+
+  // The sparkle on a tab pill counts that tab's empty composables. Tabs with
+  // Hide optional toggled on suppress the badge — the user has opted out of
+  // being nudged about composables in that tab.
+  const tabBadgeCounts = useMemo<Record<GlyphTab, number>>(() => {
+    const out: Record<GlyphTab, number> = { lowercase: 0, uppercase: 0, numbers: 0 };
+    for (const tab of GLYPH_TABS) {
+      if (hideOptionalByTab.get(tab)) continue;
+      out[tab] = composableTargetsByTab[tab].length;
+    }
+    return out;
+  }, [composableTargetsByTab, hideOptionalByTab]);
+
+  const handleSelectTab = (next: GlyphTab): void => {
+    setSelectedTab(next);
+  };
+
+  const handleToggleHideOptional = (): void => {
+    setHideOptionalByTab((previous) => {
+      const map = new Map(previous);
+      map.set(selectedTab, !(previous.get(selectedTab) ?? false));
+      return map;
+    });
+  };
 
   const handleSaveGlyph = async (
     svgPath: string,
@@ -125,11 +174,21 @@ export function InkprintApp() {
     });
   };
 
+  // Per-tab auto-fill. composeAll still runs over the whole set (cheap, and
+  // chained dependencies span tabs), then we keep only the targets that live
+  // in the current tab and write those back.
   const handleAutoFill = useCallback(async (): Promise<void> => {
     if (!userId) return;
+    const targetCodePoints = new Set(composableTargetsByTab[selectedTab]);
+    if (targetCodePoints.size === 0) return;
     setIsAutoFilling(true);
     const drawn = drawnCodePoints(sourceByCodePoint, strokesByCodePoint);
-    const produced = composeAll(strokesByCodePoint, { drawnCodePoints: drawn });
+    const allProduced = composeAll(strokesByCodePoint, { drawnCodePoints: drawn });
+    const produced = new Map<number, Stroke[]>();
+    for (const cp of targetCodePoints) {
+      const strokes = allProduced.get(cp);
+      if (strokes) produced.set(cp, strokes);
+    }
     if (produced.size === 0) {
       setIsAutoFilling(false);
       return;
@@ -167,30 +226,31 @@ export function InkprintApp() {
       return next;
     });
     setIsAutoFilling(false);
+    const tabLabel = GLYPH_TAB_LABELS[selectedTab].toLowerCase();
     toast.success(
-      `Auto-filled ${produced.size} letter${produced.size === 1 ? '' : 's'}. Tap any to tweak.`,
+      `Auto-composed ${produced.size} ${tabLabel} letter${produced.size === 1 ? '' : 's'}. Tap any to tweak.`,
     );
-  }, [userId, sourceByCodePoint, strokesByCodePoint]);
+  }, [userId, selectedTab, composableTargetsByTab, sourceByCodePoint, strokesByCodePoint]);
 
-  // Drive the persistent snackbar from composableTargets. Dismisses itself
-  // when there's nothing left to compose.
-  const targetsKey = composableTargets.join(',');
+  // Snackbar tracks the CURRENT tab's composables. Switching tabs updates
+  // the snackbar contents; emptying the list or hiding optional dismisses it.
+  const targetsKey = composableInCurrentTab.join(',');
   useEffect(() => {
-    if (composableTargets.length === 0) {
+    if (composableInCurrentTab.length === 0 || hideOptional) {
       toast.dismiss(AUTOFILL_TOAST_ID);
       return;
     }
     toast.custom(
       () => (
         <AutoFillSnackbar
-          targets={composableTargets}
+          targets={composableInCurrentTab}
           onTrigger={handleAutoFill}
           isLoading={isAutoFilling}
         />
       ),
       { id: AUTOFILL_TOAST_ID, duration: Infinity, dismissible: false },
     );
-  }, [targetsKey, isAutoFilling, handleAutoFill, composableTargets]);
+  }, [targetsKey, hideOptional, isAutoFilling, handleAutoFill, composableInCurrentTab]);
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-8 px-4 py-8 sm:px-6 sm:py-12 lg:py-16">
@@ -234,31 +294,76 @@ export function InkprintApp() {
       />
 
       <section
-        aria-labelledby="character-set-heading"
+        aria-labelledby="glyph-tab-heading"
         className={cn(
           'flex flex-col gap-3',
           mobileTab === 'draw' ? '' : 'hidden sm:flex',
         )}
       >
-        <h2 id="character-set-heading" className="text-sm font-medium text-surface-700 dark:text-surface-200">
-          Character set
+        <h2 id="glyph-tab-heading" className="sr-only">
+          Glyph category
         </h2>
-        <CharacterSetPicker selectedKey={selectedSetKey} onSelect={setSelectedSetKey} />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div role="tablist" aria-label="Glyph category" className="flex flex-wrap gap-2">
+            {GLYPH_TABS.map((tab) => {
+              const isActive = tab === selectedTab;
+              const badge = tabBadgeCounts[tab];
+              return (
+                <Button
+                  key={tab}
+                  role="tab"
+                  aria-selected={isActive}
+                  variant="secondary"
+                  isActive={isActive}
+                  onClick={() => handleSelectTab(tab)}
+                  leadingIcon={
+                    badge > 0 ? (
+                      <Sparkles className="size-4 text-amber-400" aria-hidden />
+                    ) : undefined
+                  }
+                  trailingIcon={
+                    badge > 0 ? (
+                      <span className="font-mono text-xs opacity-70">{badge}</span>
+                    ) : undefined
+                  }
+                >
+                  {GLYPH_TAB_LABELS[tab]}
+                </Button>
+              );
+            })}
+          </div>
+          {tabHasOptional ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleToggleHideOptional}
+              leadingIcon={
+                hideOptional ? (
+                  <Eye className="size-4" aria-hidden />
+                ) : (
+                  <EyeOff className="size-4" aria-hidden />
+                )
+              }
+            >
+              {hideOptional ? 'Show optional' : 'Hide optional'}
+            </Button>
+          ) : null}
+        </div>
       </section>
 
       <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
         <ProgressBar
-          label={characterSet.label}
-          value={drawnInCurrentSet}
-          max={characterSet.codePoints.length}
-          valueText={`${drawnInCurrentSet} / ${characterSet.codePoints.length}`}
+          label={GLYPH_TAB_LABELS[selectedTab]}
+          value={tabCodePoints.filter((cp) => glyphsByCodePoint.has(cp)).length}
+          max={tabCodePoints.length}
+          valueText={`${tabCodePoints.filter((cp) => glyphsByCodePoint.has(cp)).length} / ${tabCodePoints.length}`}
         />
       </div>
 
       <div className={cn(mobileTab === 'draw' ? '' : 'hidden sm:block')}>
         <LoadStateBoundary loadState={loadState} loadError={loadError}>
           <GlyphGrid
-            codePoints={characterSet.codePoints}
+            codePoints={tabCodePoints}
             glyphsByCodePoint={glyphsByCodePoint}
             sourceByCodePoint={sourceByCodePoint}
             onSelect={setActiveCodePoint}

@@ -143,15 +143,16 @@ describe('composeGlyph — multi-mark / stacked', () => {
 
 describe('composeAll', () => {
   it('produces every target whose dependencies are present, in one call', () => {
-    // Drew the minimum primitives for "a-family fully, o-family fully" coverage.
+    // Every base (lowercase + uppercase) and every primitive — pretend strokes
+    // are interchangeable shapes, the test only cares that composition resolves.
     const drawn = new Map<number, Stroke[]>([
-      [0x61, baseO], // pretend 'a' is shaped like our test 'o'
-      [0x6f, baseO],
-      [0x65, baseO],
-      [0x69, baseI],
-      [0x6e, baseO],
-      [0x75, baseU],
-      [0x79, baseI],
+      // lowercase bases
+      [0x61, baseO], [0x65, baseO], [0x69, baseI], [0x6e, baseO],
+      [0x6f, baseO], [0x75, baseU], [0x79, baseI],
+      // uppercase bases
+      [0x41, baseO], [0x45, baseO], [0x49, baseO], [0x4e, baseO],
+      [0x4f, baseO], [0x55, baseU], [0x59, baseO],
+      // primitives
       [0x00b4, acute],
       [0x0060, grave],
       [0x02c6, circumflex],
