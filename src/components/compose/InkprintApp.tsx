@@ -12,6 +12,7 @@ import {
 } from '@/lib/characterSets';
 import { useEffectiveUserId } from '@/lib/useEffectiveUserId';
 import { useSignInMerge } from '@/lib/useSignInMerge';
+import { useActiveDeviceGuard } from '@/lib/useActiveDeviceGuard';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
 import { createGlyphStore, type GlyphRecord, type GlyphStore } from '@/lib/glyphStore';
 import { composeAll } from '@/lib/glyphComposition';
@@ -22,6 +23,7 @@ import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
 import { StageStrip, STAGE_SECTION_IDS } from './StageStrip';
 import { ConflictResolverModal } from './ConflictResolverModal';
+import { InactiveDeviceBackdrop } from './InactiveDeviceBackdrop';
 import { Textarea } from '@/components/ui/Textarea';
 import { SignInButton } from '@/components/auth/SignInButton';
 
@@ -58,6 +60,15 @@ export function InkprintApp() {
     if (mergeState.status !== 'conflicts') return new Set();
     return new Set(mergeState.conflicts.map((c) => c.codePoint));
   }, [mergeState]);
+  // Cross-device active-session guard only runs for signed-in users; anonymous
+  // sessions can't be on more than one device by definition.
+  const {
+    state: activeGuardState,
+    claim: claimActive,
+    claimVersion,
+  } = useActiveDeviceGuard({
+    userId: effective.status === 'signed-in' ? effective.userId : null,
+  });
   const [glyphsByCodePoint, setGlyphsByCodePoint] = useState<Map<number, string>>(new Map());
   const [strokesByCodePoint, setStrokesByCodePoint] = useState<Map<number, Stroke[]>>(new Map());
   const [smoothingByCodePoint, setSmoothingByCodePoint] = useState<Map<number, boolean>>(new Map());
@@ -116,7 +127,7 @@ export function InkprintApp() {
     return () => {
       cancelled = true;
     };
-  }, [store, mergeVersion]);
+  }, [store, mergeVersion, claimVersion]);
 
   // Composable targets grouped by tab. Each tab's snackbar + ✨ badge are
   // driven by its own list — clears only when that tab's auto-compose runs.
@@ -524,6 +535,13 @@ export function InkprintApp() {
           conflicts={mergeState.conflicts ?? []}
           isApplying={mergeState.status === 'applying'}
           onApply={(resolutions) => void resolveConflicts(resolutions)}
+        />
+      ) : null}
+
+      {effective.status === 'signed-in' && activeGuardState.isActive === false ? (
+        <InactiveDeviceBackdrop
+          activeSince={activeGuardState.activeSince}
+          onClaim={claimActive}
         />
       ) : null}
 

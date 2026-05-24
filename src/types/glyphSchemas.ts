@@ -75,6 +75,17 @@ export const glyphMergePreviewSchema = z.object({
 
 export type GlyphMergePreviewInput = z.infer<typeof glyphMergePreviewSchema>;
 
+export const sessionUserQuerySchema = z.object({
+  userId: z.uuid(),
+});
+
+export const sessionClaimSchema = z.object({
+  userId: z.uuid(),
+  deviceId: z.string().min(8).max(64),
+});
+
+export type SessionClaimInput = z.infer<typeof sessionClaimSchema>;
+
 export const glyphMergeApplySchema = z.object({
   fromUserId: z.uuid(),
   toUserId: z.uuid(),
