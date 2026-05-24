@@ -32,6 +32,12 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-full flex flex-col">
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var k='inkprint:theme';var s=localStorage.getItem(k);var m=window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';var t=(s==='light'||s==='dark')?s:m;var d=document.documentElement;d.classList.add(t);d.style.colorScheme=t;}catch(e){}})();",
+          }}
+        />
         <ThemeProvider>
           {children}
           <Toaster />

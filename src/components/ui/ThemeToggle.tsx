@@ -1,46 +1,60 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useTheme } from 'next-themes';
-import { Button } from './Button';
-
-const ORDER = ['system', 'light', 'dark'] as const;
-type Mode = (typeof ORDER)[number];
-
-const LABELS: Record<Mode, string> = {
-  system: 'Auto',
-  light: 'Light',
-  dark: 'Dark',
-};
-
-function nextMode(current: Mode): Mode {
-  const index = ORDER.indexOf(current);
-  const safe = index === -1 ? 0 : index;
-  return ORDER[(safe + 1) % ORDER.length]!;
-}
-
-function isMode(value: string | undefined): value is Mode {
-  return value === 'system' || value === 'light' || value === 'dark';
-}
+import { useEffect, useState, type ReactNode } from 'react';
+import { Moon, Sun } from 'lucide-react';
+import { useTheme } from '@/components/providers/ThemeProvider';
+import { cn } from '@/lib/cn';
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     queueMicrotask(() => setMounted(true));
   }, []);
 
-  const current: Mode = mounted && isMode(theme) ? theme : 'system';
-  const label = mounted ? `Theme: ${LABELS[current]}` : 'Theme';
+  const lightActive = mounted && resolvedTheme === 'light';
+  const darkActive = mounted && resolvedTheme === 'dark';
 
   return (
-    <Button
-      variant="secondary"
-      size="sm"
-      onClick={() => setTheme(nextMode(current))}
-      aria-label={`${label}. Tap to change.`}
+    <div
+      role="radiogroup"
+      aria-label="Theme"
+      className="inline-flex items-center gap-0.5 rounded-full border border-surface-200 bg-surface-50 p-0.5 dark:border-surface-700 dark:bg-surface-900"
     >
-      {label}
-    </Button>
+      <ThemeOption label="Light theme" active={lightActive} onClick={() => setTheme('light')}>
+        <Sun className="size-4" aria-hidden />
+      </ThemeOption>
+      <ThemeOption label="Dark theme" active={darkActive} onClick={() => setTheme('dark')}>
+        <Moon className="size-4" aria-hidden />
+      </ThemeOption>
+    </div>
+  );
+}
+
+type ThemeOptionProps = {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
+};
+
+function ThemeOption({ label, active, onClick, children }: ThemeOptionProps) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={active}
+      aria-label={label}
+      onClick={onClick}
+      className={cn(
+        'flex h-7 w-7 items-center justify-center rounded-full transition-colors',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 dark:focus-visible:ring-brand-300',
+        active
+          ? 'bg-surface-900 text-surface-50 dark:bg-surface-50 dark:text-surface-900'
+          : 'text-surface-400 hover:text-surface-700 dark:text-surface-500 dark:hover:text-surface-200',
+      )}
+    >
+      {children}
+    </button>
   );
 }

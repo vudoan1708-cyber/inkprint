@@ -21,6 +21,7 @@ import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
 import { StageStrip, STAGE_SECTION_IDS } from './StageStrip';
 import { Textarea } from '@/components/ui/Textarea';
+import { SignInButton } from '@/components/auth/SignInButton';
 
 const PANGRAM = 'The quick brown fox jumps over the lazy dog.';
 const FLASH_RESET_MS = 800;
@@ -289,13 +290,19 @@ export function InkprintApp() {
         </Alert>
       ) : null}
 
-      <header className="flex flex-col gap-2">
-        <div className="flex items-start justify-between gap-4">
+      <div className="sticky top-0 z-40 -mx-4 border-b border-surface-200 bg-surface-50/95 backdrop-blur-md sm:-mx-6 dark:border-surface-700 dark:bg-surface-900/95">
+        <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
           <p className="text-xs font-medium uppercase tracking-widest text-brand-700 dark:text-brand-300">
             InkPrint
           </p>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <SignInButton />
+            <ThemeToggle />
+          </div>
         </div>
+      </div>
+
+      <header className="flex flex-col gap-2">
         <h1 className="text-3xl font-semibold tracking-tight text-surface-900 dark:text-surface-50 sm:text-4xl">
           Draw your own handwriting font
         </h1>

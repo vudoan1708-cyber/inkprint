@@ -74,7 +74,7 @@ export function StageStrip({ drawnCount, totalCount, onStageClick }: Props) {
   return (
     <nav
       aria-label="Stages"
-      className="sticky top-0 z-30 -mx-4 grid grid-cols-3 border-b border-surface-200 bg-surface-50/95 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 dark:border-surface-700 dark:bg-surface-900/95"
+      className="sticky top-14 z-30 -mx-4 grid grid-cols-3 border-b border-surface-200 bg-surface-50/95 px-4 py-2 backdrop-blur-md sm:-mx-6 sm:px-6 dark:border-surface-700 dark:bg-surface-900/95"
     >
       <StageButton
         number="①"

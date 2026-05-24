@@ -1,6 +1,6 @@
 'use client';
 
-import { useTheme } from 'next-themes';
+import { useTheme } from '@/components/providers/ThemeProvider';
 import { Toaster as SonnerToaster } from 'sonner';
 
 // Theme-bridged sonner. Re-exports below let callers do
@@ -10,7 +10,7 @@ export function Toaster() {
   const { resolvedTheme } = useTheme();
   return (
     <SonnerToaster
-      theme={(resolvedTheme as 'light' | 'dark') ?? 'system'}
+      theme={resolvedTheme}
       position="bottom-center"
       visibleToasts={4}
       gap={8}

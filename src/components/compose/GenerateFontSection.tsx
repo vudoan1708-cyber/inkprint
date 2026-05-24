@@ -1,10 +1,13 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { LogIn } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { requestFontGeneration } from '@/lib/apiClient';
+import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
+import { useAuth } from '@/lib/useAuth';
 
 type Props = {
   userId: string;
@@ -18,6 +21,18 @@ const HARD_TIMEOUT_MS = 15000;
 // Full Basic Latin printable range (U+0021–U+007E): 26 lowercase + 26 uppercase
 // + 10 digits + 32 punctuation/symbols. Space is auto-added by the compiler.
 const LOW_COVERAGE_THRESHOLD = 94;
+
+function computeButtonLabel({
+  state,
+  isSignedIn,
+}: {
+  state: GenerateState;
+  isSignedIn: boolean;
+}): string {
+  if (state.status === 'slow') return 'Still compiling…';
+  if (!isSignedIn) return 'Sign in & generate';
+  return 'Generate font';
+}
 
 function validateFamilyName(value: string): string | null {
   if (value.trim().length === 0) return 'Give the font a name.';
@@ -41,6 +56,10 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const auth = useAuth();
+  const isSignedIn = auth.status === 'signed-in';
+  const isAuthLoading = auth.status === 'loading';
+
   const validationError = validateFamilyName(familyName);
   const hasGlyphs = drawnGlyphCount > 0;
   const isBusy = state.status === 'submitting' || state.status === 'slow';
@@ -57,8 +76,20 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
     event.preventDefault();
-    if (validationError || !hasGlyphs || isBusy) return;
+    if (validationError || !hasGlyphs || isBusy || isAuthLoading) return;
+    if (!isSignedIn) {
+      void initiateSignIn();
+      return;
+    }
     setIsConfirmOpen(true);
+  };
+
+  const initiateSignIn = async (): Promise<void> => {
+    const supabase = createSupabaseBrowserClient();
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
   };
 
   const handleConfirm = async (): Promise<void> => {
@@ -100,7 +131,7 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
     }
   };
 
-  const buttonLabel = state.status === 'slow' ? 'Still compiling…' : 'Generate font';
+  const buttonLabel = computeButtonLabel({ state, isSignedIn });
 
   return (
     <form
@@ -120,7 +151,8 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
         variant="primary"
         size="lg"
         isLoading={isBusy}
-        disabled={validationError !== null || !hasGlyphs || isBusy}
+        disabled={validationError !== null || !hasGlyphs || isBusy || isAuthLoading}
+        leadingIcon={!isSignedIn && !isBusy ? <LogIn className="size-4" aria-hidden /> : undefined}
       >
         {buttonLabel}
       </Button>
