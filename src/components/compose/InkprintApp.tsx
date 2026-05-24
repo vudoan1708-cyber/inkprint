@@ -10,7 +10,8 @@ import {
   tabsForCodePoint,
   type GlyphTab,
 } from '@/lib/characterSets';
-import { useUserId } from '@/lib/userId';
+import { useEffectiveUserId } from '@/lib/useEffectiveUserId';
+import { useSignInMerge } from '@/lib/useSignInMerge';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
 import { createGlyphStore, type GlyphRecord, type GlyphStore } from '@/lib/glyphStore';
 import { composeAll } from '@/lib/glyphComposition';
@@ -20,6 +21,7 @@ import { DrawingModal } from './DrawingModal';
 import { FontPreview } from './FontPreview';
 import { GenerateFontSection } from './GenerateFontSection';
 import { StageStrip, STAGE_SECTION_IDS } from './StageStrip';
+import { ConflictResolverModal } from './ConflictResolverModal';
 import { Textarea } from '@/components/ui/Textarea';
 import { SignInButton } from '@/components/auth/SignInButton';
 
@@ -44,7 +46,18 @@ const AUTOFILL_TOAST_ID = 'autofill-prompt';
 const SNACKBAR_PREVIEW_LIMIT = 12;
 
 export function InkprintApp() {
-  const { userId, error: userIdError } = useUserId();
+  const effective = useEffectiveUserId();
+  const { userId, error: userIdError } = effective;
+  const anonUserId = effective.status === 'signed-in' ? effective.anonUserId : null;
+  const { state: mergeState, resolve: resolveConflicts } = useSignInMerge({
+    authUserId: effective.status === 'signed-in' ? effective.userId : null,
+    anonUserId,
+  });
+  const mergeVersion = mergeState.mergeVersion;
+  const conflictedCodePoints = useMemo<Set<number>>(() => {
+    if (mergeState.status !== 'conflicts') return new Set();
+    return new Set(mergeState.conflicts.map((c) => c.codePoint));
+  }, [mergeState]);
   const [glyphsByCodePoint, setGlyphsByCodePoint] = useState<Map<number, string>>(new Map());
   const [strokesByCodePoint, setStrokesByCodePoint] = useState<Map<number, Stroke[]>>(new Map());
   const [smoothingByCodePoint, setSmoothingByCodePoint] = useState<Map<number, boolean>>(new Map());
@@ -103,7 +116,7 @@ export function InkprintApp() {
     return () => {
       cancelled = true;
     };
-  }, [store]);
+  }, [store, mergeVersion]);
 
   // Composable targets grouped by tab. Each tab's snackbar + ✨ badge are
   // driven by its own list — clears only when that tab's auto-compose runs.
@@ -422,7 +435,10 @@ export function InkprintApp() {
             codePoints={tabCodePoints}
             glyphsByCodePoint={glyphsByCodePoint}
             sourceByCodePoint={sourceByCodePoint}
-            onSelect={setActiveCodePoint}
+            onSelect={(codePoint) => {
+              if (conflictedCodePoints.has(codePoint)) return;
+              setActiveCodePoint(codePoint);
+            }}
           />
         </LoadStateBoundary>
       </section>
@@ -500,6 +516,14 @@ export function InkprintApp() {
           initialSmoothing={smoothingByCodePoint.get(activeCodePoint) ?? false}
           onSave={handleSaveGlyph}
           onClose={() => setActiveCodePoint(null)}
+        />
+      ) : null}
+
+      {mergeState.status === 'conflicts' || mergeState.status === 'applying' ? (
+        <ConflictResolverModal
+          conflicts={mergeState.conflicts ?? []}
+          isApplying={mergeState.status === 'applying'}
+          onApply={(resolutions) => void resolveConflicts(resolutions)}
         />
       ) : null}
 

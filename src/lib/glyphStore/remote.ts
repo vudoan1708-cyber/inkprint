@@ -1,14 +1,5 @@
-import type { GlyphRecord, GlyphStore, GlyphUpsertInput } from './types';
-
-type Envelope<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: { code: string; message: string; details?: unknown } };
-
-async function parseEnvelope<T>(res: Response): Promise<T> {
-  const body = (await res.json()) as Envelope<T>;
-  if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`);
-  return body.data;
-}
+import { parseEnvelope } from '@/lib/apiClient';
+import type { GlyphRecord, GlyphStore } from './types';
 
 export function createRemoteGlyphStore(userId: string): GlyphStore {
   return {

@@ -1,6 +1,21 @@
-type Envelope<T> =
+export type Envelope<T> =
   | { ok: true; data: T }
   | { ok: false; error: { code: string; message: string; details?: unknown } };
+
+export async function parseEnvelope<T>(res: Response): Promise<T> {
+  const body = (await res.json()) as Envelope<T>;
+  if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`);
+  return body.data;
+}
+
+export async function postEnvelope<T>(url: string, body: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return parseEnvelope<T>(res);
+}
 
 export async function requestFontGeneration(input: {
   userId: string;
@@ -16,8 +31,7 @@ export async function requestFontGeneration(input: {
 
   const contentType = res.headers.get('content-type') ?? '';
   if (!res.ok || contentType.startsWith('application/json')) {
-    const body = (await res.json()) as Envelope<unknown>;
-    if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`);
+    await parseEnvelope<unknown>(res);
     throw new Error('Unexpected JSON response when expecting font bytes');
   }
 

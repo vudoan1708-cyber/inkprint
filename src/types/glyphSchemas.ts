@@ -64,3 +64,25 @@ export const glyphListQuerySchema = z.object({
 });
 
 export type GlyphListQueryInput = z.infer<typeof glyphListQuerySchema>;
+
+// Merge schemas — used when transferring rows from the anonymous local UUID
+// to the auth user id after Google sign-in.
+
+export const glyphMergePreviewSchema = z.object({
+  fromUserId: z.uuid(),
+  toUserId: z.uuid(),
+});
+
+export type GlyphMergePreviewInput = z.infer<typeof glyphMergePreviewSchema>;
+
+export const glyphMergeApplySchema = z.object({
+  fromUserId: z.uuid(),
+  toUserId: z.uuid(),
+  // Per-codepoint resolution. Missing keys default to 'cloud' (no-op).
+  resolutions: z.record(
+    z.string().regex(/^\d+$/),
+    z.enum(['local', 'cloud']),
+  ).optional(),
+});
+
+export type GlyphMergeApplyInput = z.infer<typeof glyphMergeApplySchema>;
