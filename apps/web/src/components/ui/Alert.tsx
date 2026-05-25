@@ -2,7 +2,7 @@
 
 import { type ReactNode } from 'react';
 import { IconButton } from './IconButton';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 export type AlertVariant = 'error' | 'info' | 'success';
 

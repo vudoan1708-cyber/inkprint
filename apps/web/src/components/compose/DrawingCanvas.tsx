@@ -26,7 +26,7 @@ import {
   type AnchorRef,
   type Point,
 } from '@/lib/canvasGeometry';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 export type CanvasTool = 'draw' | 'edit' | 'move';
 

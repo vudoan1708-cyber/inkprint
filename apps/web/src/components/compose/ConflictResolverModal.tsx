@@ -1,10 +1,10 @@
 'use client';
 
 import { useId, useMemo, useState } from 'react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@inkprint/ui';
 import { Modal } from '@/components/ui/Modal';
 import { GlyphThumbnail } from './GlyphThumbnail';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 import type { MergeConflict } from '@/lib/useSignInMerge';
 
 type Choice = 'local' | 'cloud';

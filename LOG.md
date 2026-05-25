@@ -6,6 +6,65 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-25 — Inkwell extension: scaffold under WXT + React Compiler, cross-browser by construction
+
+**Status:** Accepted (scaffold only; font-injection logic deferred until the read-side API lands)
+**Owner:** Vu Doan
+**Trigger:** The Embed action persists fonts to R2 + Supabase but has no consumer. The browser extension is that consumer — the surface that takes the privately-stored OTF and applies it across the user&rsquo;s web sessions. Standing it up now (with the architecture, deploy story, and AI guardrails decided) means the next chunk of work — fetching auth, fetching font bytes, injecting `@font-face` — drops into a known shape instead of debating tooling.
+
+**Context**
+
+A browser extension is a different runtime than the web app: Manifest V3 service workers, content scripts isolated from page JS context, strict CSP, four target browsers (Chrome, Firefox, Edge, Safari) each with their own store and review cycle. Forcing it into the Next.js codebase would mean dragging extension tooling — manifest generation, MV3-compatible bundling, per-browser zips — into a project that has none of those concerns. The earlier monorepo decision (Turborepo + `apps/*`) was made specifically to host this kind of sibling without the coupling.
+
+**Decision**
+
+Inkwell lives at `apps/inkwell/` as a separate workspace (`@inkprint/inkwell`). Toolchain:
+
+- **WXT** — Vite-based, framework-agnostic web extension toolkit. Handles manifest generation, MV3-safe bundling, HMR, per-browser builds, and store-zipping. One source, four output bundles.
+- **React 19 + React Compiler** — popup UI. Compiler is wired via `@vitejs/plugin-react` v6&rsquo;s `reactCompilerPreset` + `@rolldown/plugin-babel`. Manual `useMemo`/`useCallback`/`memo` is now a code smell; the compiler memoizes automatically.
+- **`browser.*` WebExtensions API** — auto-polyfilled by WXT. Never `chrome.*`. No UA branching. Same source compiles for Chrome, Firefox, Edge, Safari.
+
+The extension is structured around three entrypoints:
+
+1. `entrypoints/background.ts` — service worker. Owns auth, OTF fetching, storage, and broadcasting font updates to open tabs. Service workers can be killed at any time, so **all state persists to `browser.storage.*`** — module-scope state is forbidden.
+2. `entrypoints/content.ts` — runs on every page (`<all_urls>`) at `document_start`. Applies the user&rsquo;s font and watches for SPA navigations (history pushState + MutationObserver fallback) so single-page-app route changes don&rsquo;t lose the font.
+3. `entrypoints/popup/` — React popup UI (sign-in, status, controls).
+
+A per-directory `AGENTS.md` documents the load-bearing rules: cross-browser invariants, no remote code, service-worker lifecycle, content-script isolation, React-Compiler-on, and the deploy matrix. Future contributors (human or AI) read this file before touching the extension.
+
+**Rationale**
+
+- **Cross-browser by construction, not by porting.** Choosing WXT + `browser.*` API up front means every PR builds for all four targets from one source. No "we&rsquo;ll add Firefox support later" technical debt accumulates.
+- **The "font sticks across tabs and pages" promise is architectural, not patched-on.** Background script as single source of truth + content script with SPA-navigation observer + storage-based broadcast — that's what makes tab switches, route changes, and new windows all keep the font applied. A naïve "inject once on load" implementation would lose the font on every SPA route change, which is most modern sites.
+- **Same monorepo, not a sibling repo.** Putting Inkwell next to the web app under Turborepo means future shared code (`packages/contracts` for the API envelope, eventually `packages/core` for stroke math if any extension feature needs it) is one workspace away. The "microservices feel" the user liked is preserved — each app builds, deploys, and ships independently — without forcing duplicate types across repos.
+- **React Compiler over manual memoization.** The popup UI is small now but will grow (sign-in flow, font status, per-site toggles). Compiler-driven memoization means we add features without the usual `useMemo` archaeology.
+- **WXT over Plasmo / CRXJS.** WXT is the most active, most cross-browser-native of the three, Vite-based (matches our React Compiler integration), and has the cleanest store-zip story (`wxt zip --browser <name>` per target).
+
+**UX implications**
+
+The extension is invisible most of the time — it injects the user&rsquo;s font and gets out of the way. The popup is reserved for sign-in, current-font status ("Using *My Handwriting*, last updated 2 minutes ago"), and per-site toggles ("disable on github.com"). Cross-browser parity means Firefox/Safari/Edge users get the exact same experience as Chrome users, no second-class fallback story.
+
+**Impact**
+
+- **Added:** `apps/inkwell/` workspace.
+  - `package.json` — `@inkprint/inkwell`, WXT scripts (`dev`, `build`, `zip` × {chrome,firefox,edge,safari} + `:all` variants), `postinstall: wxt prepare`.
+  - `wxt.config.ts` — manifest (name, description, `storage` + `<all_urls>` permissions), Vite plugins (`@vitejs/plugin-react` + `@rolldown/plugin-babel` with `reactCompilerPreset`).
+  - `tsconfig.json` — extends WXT-generated `.wxt/tsconfig.json`.
+  - `entrypoints/background.ts` — service-worker stub with `onInstalled` listener; TODO for font fetch + cache + broadcast.
+  - `entrypoints/content.ts` — `<all_urls>` content script with `applyFontFromStorage()` stub and `observeSpaNavigations()` helper (real SPA observer, not a stub — keeps the font on history-pushed routes).
+  - `entrypoints/popup/` — minimal React popup (`index.html`, `main.tsx`, `App.tsx`).
+  - `AGENTS.md` — per-directory rules: cross-browser, no remote code, SW lifecycle, content-script isolation, React Compiler on, deploy matrix.
+- **Modified:** none in the web app or root config — Turborepo&rsquo;s `apps/*` workspace pattern picks up the new workspace automatically. `npm run dev` from the root now also spins up Inkwell (`wxt`) in parallel with `next dev`, with both outputs interleaved in Turbo&rsquo;s TUI.
+- **Open follow-ups (deliberately not in this change):**
+  - Real font injection — needs the read-side API (`GET /api/fonts/me`) to exist first, plus Supabase OAuth wired into the extension popup.
+  - Extension icon set (16/32/48/128 PNGs from a single SVG source via `wxt:icons`).
+  - `packages/contracts` workspace for the API envelope and font-metadata types, so the web app and the extension share one TypeScript source of truth on the wire format.
+  - CI matrix that runs `npm run build:all` to gate PRs on cross-browser parity.
+  - Per-site enable/disable UI in the popup.
+  - SPA-navigation observer is currently a URL-poll via MutationObserver — replace with a `chrome.webNavigation.onHistoryStateUpdated` listener in the background and a broadcast to content scripts, which is more efficient and avoids per-DOM-change work.
+
+---
+
 ## 2026-05-25 — Embed action: persist the compiled font privately to R2 + Supabase
 
 **Status:** Accepted (write-side only; extension fetch endpoint deferred)

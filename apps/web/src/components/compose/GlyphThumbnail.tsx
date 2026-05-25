@@ -1,5 +1,5 @@
 import { GLYPH_UPM } from '@/lib/strokeMath';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 type Props = {
   svgPath: string;

@@ -2,7 +2,7 @@
 
 import Image from 'next/image';
 import { LogIn } from 'lucide-react';
-import { Button, type ButtonSize, type ButtonVariant } from '@/components/ui/Button';
+import { Button, type ButtonSize, type ButtonVariant } from '@inkprint/ui';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { useAuth } from '@/lib/useAuth';
 

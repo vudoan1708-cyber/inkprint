@@ -18,7 +18,7 @@ import {
   useTypeahead,
 } from '@floating-ui/react';
 import { Check, ChevronDown } from 'lucide-react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 export type SelectOption<T extends string> = {
   value: T;

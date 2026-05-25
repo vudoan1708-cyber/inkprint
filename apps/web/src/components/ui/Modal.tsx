@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, type ReactNode } from 'react';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 type ModalSize = 'sm' | 'md' | 'lg' | 'xl';
 

@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { Check, Cloud, Download, LogIn } from 'lucide-react';
 import { Alert } from '@/components/ui/Alert';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@inkprint/ui';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { downloadFontFile, requestFontEmbed, requestFontGeneration } from '@/lib/apiClient';

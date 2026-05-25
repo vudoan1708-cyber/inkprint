@@ -1,8 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button, type ButtonSize } from './Button';
-import { cn } from '@/lib/cn';
+import { Button, type ButtonSize } from '@inkprint/ui';
+import { cn } from '@inkprint/ui';
 
 export type TabOption<T extends string> = {
   value: T;

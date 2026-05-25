@@ -3,7 +3,7 @@
 import { GlyphCell } from './GlyphCell';
 import { isOptionalCodePoint } from '@/lib/characterSets';
 import type { GlyphSource } from '@/types/glyphSchemas';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 type Props = {
   codePoints: readonly number[];

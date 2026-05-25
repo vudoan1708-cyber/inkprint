@@ -31,14 +31,14 @@ const PANGRAM = 'The quick brown fox jumps over the lazy dog.';
 const FLASH_RESET_MS = 800;
 
 type Stage = 'draft' | 'test' | 'print';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@inkprint/ui';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Alert } from '@/components/ui/Alert';
 import { Select } from '@/components/ui/Select';
 import { Snackbar } from '@/components/ui/Snackbar';
 import { ThemeToggle } from '@/components/ui/ThemeToggle';
 import { toast } from '@/components/ui/Toaster';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 const CHARACTER_SET = CHARACTER_SETS['latin-extended'];
 
@@ -316,9 +316,12 @@ export function InkprintApp() {
 
       <div className="sticky top-0 z-40 -mx-4 border-b border-surface-200 bg-surface-50/95 backdrop-blur-md sm:-mx-6 dark:border-surface-700 dark:bg-surface-900/95">
         <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-6">
-          <p className="text-xs font-medium uppercase tracking-widest text-brand-700 dark:text-brand-300">
-            InkPrint
-          </p>
+          <div className="flex items-center gap-2">
+            <img src="/favicon.ico" alt="" className="size-5" />
+            <p className="text-xs font-medium uppercase tracking-widest text-brand-700 dark:text-brand-300">
+              InkPrint
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <SignInButton />
             <ThemeToggle />

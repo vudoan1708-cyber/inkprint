@@ -1,4 +1,4 @@
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 type Props = {
   value: number;

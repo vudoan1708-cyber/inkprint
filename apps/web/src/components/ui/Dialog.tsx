@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useId, useRef, type ReactNode } from 'react';
-import { Button, type ButtonVariant } from './Button';
+import { Button, type ButtonVariant } from '@inkprint/ui';
 
 type Props = {
   isOpen: boolean;

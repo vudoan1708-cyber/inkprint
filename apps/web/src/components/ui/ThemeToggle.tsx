@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Moon, Sun } from 'lucide-react';
 import { useTheme } from '@/components/providers/ThemeProvider';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();

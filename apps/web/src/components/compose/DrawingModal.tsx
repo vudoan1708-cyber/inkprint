@@ -7,7 +7,7 @@ import {
   type CanvasTool,
   type DrawingCanvasHandle,
 } from './DrawingCanvas';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@inkprint/ui';
 import { IconButton } from '@/components/ui/IconButton';
 import { Tabs } from '@/components/ui/Tabs';
 import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';

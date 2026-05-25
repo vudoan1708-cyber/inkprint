@@ -4,7 +4,7 @@ import { Sparkles } from 'lucide-react';
 import { GlyphThumbnail } from './GlyphThumbnail';
 import { PRIMITIVE_LABELS } from '@/lib/characterSets';
 import type { GlyphSource } from '@/types/glyphSchemas';
-import { cn } from '@/lib/cn';
+import { cn } from '@inkprint/ui';
 
 type Props = {
   codePoint: number;

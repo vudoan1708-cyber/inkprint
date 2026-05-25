@@ -1,7 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { Button } from './Button';
+import { Button } from '@inkprint/ui';
 
 export type SnackbarAction = {
   label: string;

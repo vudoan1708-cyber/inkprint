@@ -2,7 +2,7 @@
 
 import { useId, useState } from 'react';
 import { MonitorSmartphone } from 'lucide-react';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@inkprint/ui';
 import { Modal } from '@/components/ui/Modal';
 
 type Props = {
