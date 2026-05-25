@@ -227,6 +227,36 @@ const RECIPES: Readonly<Record<number, ComposeRecipe>> = (() => {
 
 export const COMPOSITION_RECIPES = RECIPES;
 
+// Transitive reverse map: composed cps that depend on each cp (via base or mark).
+export const DEPENDENTS_OF: ReadonlyMap<number, ReadonlySet<number>> = (() => {
+  const direct = new Map<number, Set<number>>();
+  for (const [composedStr, recipe] of Object.entries(RECIPES)) {
+    const composed = Number(composedStr);
+    for (const dep of [recipe.base, ...recipe.marks]) {
+      let s = direct.get(dep);
+      if (!s) {
+        s = new Set();
+        direct.set(dep, s);
+      }
+      s.add(composed);
+    }
+  }
+  const out = new Map<number, Set<number>>();
+  for (const cp of direct.keys()) {
+    const seen = new Set<number>();
+    const queue: number[] = [...(direct.get(cp) ?? [])];
+    while (queue.length > 0) {
+      const c = queue.shift()!;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      const downstream = direct.get(c);
+      if (downstream) for (const d of downstream) queue.push(d);
+    }
+    out.set(cp, seen);
+  }
+  return out;
+})();
+
 // Stable, dependency-aware ordering: every recipe appears after the recipe
 // for its base (if any). composeAll relies on this so chained bases like
 // ô → ổ resolve in one pass.

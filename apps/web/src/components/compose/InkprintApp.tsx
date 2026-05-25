@@ -15,7 +15,7 @@ import { useSignInMerge } from '@/lib/useSignInMerge';
 import { useActiveDeviceGuard } from '@/lib/useActiveDeviceGuard';
 import { GLYPH_UPM, strokesToSvgPath, type Stroke } from '@/lib/strokeMath';
 import { createGlyphStore, type GlyphRecord, type GlyphStore } from '@/lib/glyphStore';
-import { composeAll } from '@/lib/glyphComposition';
+import { composeAll, DEPENDENTS_OF } from '@/lib/glyphComposition';
 import type { GlyphSource } from '@/types/glyphSchemas';
 import { GlyphGrid } from './GlyphGrid';
 import { DrawingModal } from './DrawingModal';
@@ -192,33 +192,71 @@ export function InkprintApp() {
     smoothingApplied: boolean,
   ): Promise<void> => {
     if (!store || activeCodePoint === null) return;
+    const cp = activeCodePoint;
     await store.upsert({
-      codePoint: activeCodePoint,
+      codePoint: cp,
       svgPath,
       width: GLYPH_UPM,
       strokes,
       smoothingApplied,
       source: 'drawn',
     });
+
+    const affected = [...(DEPENDENTS_OF.get(cp) ?? [])].filter((c) =>
+      strokesByCodePoint.has(c),
+    );
+    let recomposed = new Map<number, Stroke[]>();
+    if (affected.length > 0) {
+      const nextStrokes = new Map(strokesByCodePoint);
+      nextStrokes.set(cp, strokes);
+      const nextSource = new Map(sourceByCodePoint);
+      nextSource.set(cp, 'drawn');
+      const drawn = drawnCodePoints(nextSource, nextStrokes);
+      for (const dep of affected) drawn.delete(dep);
+      const allProduced = composeAll(nextStrokes, { drawnCodePoints: drawn });
+      for (const dep of affected) {
+        const s = allProduced.get(dep);
+        if (s) recomposed.set(dep, s);
+      }
+      if (recomposed.size > 0) {
+        try {
+          await store.upsertBulk(
+            Array.from(recomposed, ([codePoint, s]) => ({
+              codePoint,
+              svgPath: strokesToSvgPath(s),
+              width: GLYPH_UPM,
+              strokes: s,
+              source: 'composed',
+            })),
+          );
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : 'Recompose failed.');
+          recomposed = new Map();
+        }
+      }
+    }
+
     setGlyphsByCodePoint((previous) => {
       const next = new Map(previous);
-      next.set(activeCodePoint, svgPath);
+      next.set(cp, svgPath);
+      for (const [c, s] of recomposed) next.set(c, strokesToSvgPath(s));
       return next;
     });
     setStrokesByCodePoint((previous) => {
       const next = new Map(previous);
-      next.set(activeCodePoint, strokes);
+      next.set(cp, strokes);
+      for (const [c, s] of recomposed) next.set(c, s);
       return next;
     });
     setSmoothingByCodePoint((previous) => {
       const next = new Map(previous);
-      if (smoothingApplied) next.set(activeCodePoint, true);
-      else next.delete(activeCodePoint);
+      if (smoothingApplied) next.set(cp, true);
+      else next.delete(cp);
       return next;
     });
     setSourceByCodePoint((previous) => {
       const next = new Map(previous);
-      next.set(activeCodePoint, 'drawn');
+      next.set(cp, 'drawn');
       return next;
     });
   };

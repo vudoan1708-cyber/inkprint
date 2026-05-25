@@ -5,7 +5,7 @@ export type SessionRecord = {
 
 export type AppliedFont = {
   familyName: string;
-  bytesBase64: string | null;
+  bytesBase64: string;
 };
 
 export type CachedFont = {
@@ -29,4 +29,14 @@ export const appliedFontItem = storage.defineItem<AppliedFont | null>('local:app
 
 export const cachedFontItem = storage.defineItem<CachedFont | null>('local:cachedFont', {
   fallback: null,
+});
+
+export const signedOutItem = storage.defineItem<boolean>('local:signedOut', {
+  fallback: false,
+});
+
+// Page font-size scale as a percentage (100 = no change). Applied alongside the
+// font on every tab when an `appliedFont` is set.
+export const fontSizeItem = storage.defineItem<number>('local:fontSize', {
+  fallback: 100,
 });

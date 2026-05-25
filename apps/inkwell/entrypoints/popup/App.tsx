@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@inkprint/ui';
+import { Button, Slider } from '@inkprint/ui';
 import type { WxtStorageItem } from 'wxt/utils/storage';
 import type { ExtensionMessage, ExtensionResponse } from '@/lib/messages';
 import { WEB_APP_URL } from '@/lib/env';
-import { sessionItem, type SessionRecord } from '@/lib/storage';
+import { appliedFontItem, cachedFontItem, fontSizeItem, sessionItem, signedOutItem, type SessionRecord } from '@/lib/storage';
 
 export function App() {
   const session = useStorageItem(sessionItem);
@@ -28,8 +28,9 @@ function LoadingView() {
 }
 
 function SignInView() {
-  const handleSignIn = (): void => {
-    void browser.tabs.create({ url: WEB_APP_URL });
+  const handleSignIn = async (): Promise<void> => {
+    await signedOutItem.setValue(false);
+    await browser.tabs.create({ url: WEB_APP_URL });
   };
 
   return (
@@ -41,7 +42,12 @@ function SignInView() {
         Sign in with your InkPrint account so Inkwell can find the fonts you&rsquo;ve
         created and apply them everywhere on the web.
       </p>
-      <Button variant="primary" size="md" fullWidth onClick={handleSignIn}>
+      <Button
+        variant="primary"
+        size="md"
+        fullWidth
+        onClick={() => void handleSignIn()}
+      >
         Sign in on InkPrint
       </Button>
       <p className="text-center text-xs text-surface-500 dark:text-surface-400">
@@ -53,6 +59,7 @@ function SignInView() {
 }
 
 function SignedInView({ session }: { session: SessionRecord }) {
+  const fontSize = useStorageItem(fontSizeItem) ?? 100;
   const [appliedFamily, setAppliedFamily] = useState<string | null | undefined>(undefined);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,8 +95,10 @@ function SignedInView({ session }: { session: SessionRecord }) {
   };
 
   const handleSignOut = async (): Promise<void> => {
+    await signedOutItem.setValue(true);
     await sessionItem.setValue(null);
-    await sendMessage({ type: 'UNAPPLY_FONT' });
+    await cachedFontItem.setValue(null);
+    await appliedFontItem.setValue(null);
   };
 
   const isApplied = appliedFamily !== null && appliedFamily !== undefined;
@@ -110,7 +119,7 @@ function SignedInView({ session }: { session: SessionRecord }) {
           My Handwriting
         </div>
         <div className="text-xs text-surface-500 dark:text-surface-400">
-          {isApplied ? 'Applied to every open tab' : 'Not applied yet'}
+          {isApplied ? 'Applied to every open tab' : 'Your embedded handwriting font, applied across every tab.'}
         </div>
       </section>
 
@@ -123,6 +132,23 @@ function SignedInView({ session }: { session: SessionRecord }) {
           Apply to every page
         </Button>
       )}
+
+      {isApplied ? (
+        <>
+          <Slider
+            label="Font size"
+            min={50}
+            max={400}
+            step={5}
+            value={fontSize}
+            valueSuffix="%"
+            onChange={(next) => void fontSizeItem.setValue(next)}
+          />
+          <p className="text-xs text-surface-500 dark:text-surface-400">
+            Don&rsquo;t see the font on a page? Refresh that tab.
+          </p>
+        </>
+      ) : null}
 
       {error ? (
         <p role="alert" className="text-sm text-danger-600 dark:text-danger-400">

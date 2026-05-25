@@ -9,7 +9,7 @@ import {
 } from './DrawingCanvas';
 import { Button } from '@inkprint/ui';
 import { IconButton } from '@/components/ui/IconButton';
-import { Tabs } from '@/components/ui/Tabs';
+import { Tabs } from '@inkprint/ui';
 import { GLYPH_UPM, type Stroke } from '@/lib/strokeMath';
 import { smoothStrokes } from '@/lib/smoothing';
 import { glyphDisplayLabel, glyphGhostChar } from '@/lib/characterSets';

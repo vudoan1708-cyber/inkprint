@@ -1,6 +1,6 @@
 import type { ExtensionMessage, ExtensionResponse } from '@/lib/messages';
 import { WEB_APP_URL } from '@/lib/env';
-import { appliedFontItem, cachedFontItem, sessionItem, type SessionRecord } from '@/lib/storage';
+import { appliedFontItem, cachedFontItem, fontSizeItem, sessionItem, signedOutItem, type SessionRecord } from '@/lib/storage';
 
 export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
@@ -13,14 +13,8 @@ export default defineBackground(() => {
   );
 
   // Broadcast applied-font changes so every open tab re-applies without reload.
-  appliedFontItem.watch(async () => {
-    const tabs = await browser.tabs.query({});
-    await Promise.allSettled(
-      tabs
-        .filter((t) => typeof t.id === 'number')
-        .map((t) => browser.tabs.sendMessage(t.id!, { type: 'APPLIED_FONT_CHANGED' })),
-    );
-  });
+  appliedFontItem.watch(() => void broadcast('APPLIED_FONT_CHANGED'));
+  fontSizeItem.watch(() => void broadcast('FONT_SIZE_CHANGED'));
 
   // Check session on install/startup so a pre-existing web session is detected
   // without the user having to open the popup first.
@@ -41,7 +35,10 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
         error: 'Font not ready yet. Open an InkPrint tab so Inkwell can load your font, then try again.',
       };
     }
-    await appliedFontItem.setValue({ familyName: cache.familyName, bytesBase64: cache.bytesBase64 });
+    await appliedFontItem.setValue({
+      familyName: cache.familyName,
+      bytesBase64: cache.bytesBase64,
+    });
     return { ok: true, data: { applied: true, familyName: cache.familyName } };
   }
 
@@ -56,14 +53,13 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
   }
 
   if (message.type === 'SET_SESSION') {
+    if (await signedOutItem.getValue()) return { ok: true };
     await writeSession(message.session);
     return { ok: true };
   }
 
   if (message.type === 'SET_FONT_CACHE') {
     await cachedFontItem.setValue(message.cache);
-    // If a font is currently applied, refresh it with the new bytes (e.g. user
-    // re-embedded a different version of their font).
     const applied = await appliedFontItem.getValue();
     if (applied && message.cache) {
       await appliedFontItem.setValue({
@@ -77,6 +73,21 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
   return { ok: false, error: 'Unknown message type' };
 }
 
+async function broadcast(type: string): Promise<void> {
+  const tabs = await browser.tabs.query({}).catch(() => []);
+  await Promise.allSettled(
+    tabs
+      .filter((t) => typeof t.id === 'number')
+      .map((t) => {
+        try {
+          return browser.tabs.sendMessage(t.id!, { type }).catch(() => undefined);
+        } catch {
+          return undefined;
+        }
+      }),
+  );
+}
+
 async function writeSession(next: SessionRecord | null): Promise<void> {
   const previous = await sessionItem.getValue();
   if (previous?.userId !== next?.userId) {
@@ -88,6 +99,7 @@ async function writeSession(next: SessionRecord | null): Promise<void> {
 // Best-effort: SameSite-Lax cookies don't always travel in MV3 SW fetches.
 // The bridge content script is the authoritative path; this is just a hint.
 async function refreshSession(): Promise<void> {
+  if (await signedOutItem.getValue()) return;
   let res: Response;
   try {
     res = await fetch(`${WEB_APP_URL}/api/me`, { credentials: 'include' });

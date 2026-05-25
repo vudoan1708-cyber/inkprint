@@ -1,4 +1,4 @@
-import { appliedFontItem, type AppliedFont } from '@/lib/storage';
+import { appliedFontItem, fontSizeItem, type AppliedFont } from '@/lib/storage';
 
 const STYLE_ID = 'inkwell-applied-font';
 
@@ -12,10 +12,9 @@ export default defineContentScript({
     await applyFromStorage();
     observeSpaNavigations(() => void applyFromStorage());
 
-    // Background broadcasts when applied-font changes (from popup or another
-    // tab). Re-read storage and re-inject.
     browser.runtime.onMessage.addListener((message: { type: string }) => {
       if (message.type === 'APPLIED_FONT_CHANGED') void applyFromStorage();
+      if (message.type === 'FONT_SIZE_CHANGED') void applyFromStorage();
     });
   },
 });
@@ -29,39 +28,41 @@ function isContextAlive(): boolean {
 async function applyFromStorage(): Promise<void> {
   if (!isContextAlive()) return;
   try {
-    const applied = await appliedFontItem.getValue();
+    const [applied, fontSize] = await Promise.all([
+      appliedFontItem.getValue(),
+      fontSizeItem.getValue(),
+    ]);
     if (!applied) {
       removeFont();
       return;
     }
-    injectFont(applied);
+    injectFont(applied, fontSize);
   } catch {
     // Context was invalidated mid-call (extension reload). Stop quietly.
   }
 }
 
-function injectFont(applied: AppliedFont): void {
+function injectFont(applied: AppliedFont, fontSize: number): void {
   removeFont();
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = buildFontCss(applied);
+  style.textContent = buildFontCss(applied, fontSize);
   // documentElement, not body — content scripts at document_start run before
   // <body> exists. Appending to <html> avoids "null parent" errors.
   document.documentElement.appendChild(style);
 }
 
-function buildFontCss(applied: AppliedFont): string {
+function buildFontCss(applied: AppliedFont, fontSize: number): string {
   const family = JSON.stringify(applied.familyName);
-  const fontFace = applied.bytesBase64
-    ? `@font-face {
-         font-family: ${family};
-         src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
-       }`
-    : '';
+  const sizeRule = fontSize === 100 ? '' : `font-size: ${fontSize}% !important;`;
   return `
-    ${fontFace}
+    @font-face {
+      font-family: ${family};
+      src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
+    }
     *, *::before, *::after {
-      font-family: ${family}, cursive !important;
+      font-family: ${family} !important;
+      ${sizeRule}
     }
   `;
 }
