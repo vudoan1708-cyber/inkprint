@@ -1,0 +1,42 @@
+{
+  "name": "@inkprint/inkwell",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Inkwell — applies the user's InkPrint handwriting font across the web.",
+  "type": "module",
+  "scripts": {
+    "dev": "wxt",
+    "dev:firefox": "wxt --browser firefox",
+    "dev:edge": "wxt --browser edge",
+    "build": "wxt build",
+    "build:firefox": "wxt build --browser firefox",
+    "build:edge": "wxt build --browser edge",
+    "build:safari": "wxt build --browser safari",
+    "build:all": "wxt build && wxt build --browser firefox && wxt build --browser edge && wxt build --browser safari",
+    "zip": "wxt zip",
+    "zip:firefox": "wxt zip --browser firefox",
+    "zip:edge": "wxt zip --browser edge",
+    "zip:safari": "wxt zip --browser safari",
+    "zip:all": "wxt zip && wxt zip --browser firefox && wxt zip --browser edge && wxt zip --browser safari",
+    "typecheck": "tsc --noEmit",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@inkprint/ui": "*",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@rolldown/plugin-babel": "^0.2.0",
+    "@tailwindcss/vite": "^4",
+    "@types/babel__core": "^7.20.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.0",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "wxt": "^0.20.0"
+  }
+}

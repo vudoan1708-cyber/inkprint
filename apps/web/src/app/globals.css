@@ -1,0 +1,28 @@
+@import "tailwindcss";
+@import "@inkprint/ui/theme.css";
+
+@source "../../../../packages/ui/src";
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans, Arial, Helvetica, sans-serif);
+}
+
+@keyframes flash-once {
+  0%, 25% {
+    background-color: rgba(74, 85, 168, 0.55);
+    box-shadow: 0 0 0 4px rgba(74, 85, 168, 0.18);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+.flash-once {
+  animation: flash-once 1.1s ease-out;
+  border-radius: 0.5rem;
+  padding: 0.125rem 0.5rem;
+  margin: -0.125rem -0.5rem;
+}
+

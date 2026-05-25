@@ -6,6 +6,259 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-25 — Rename "Embed" → "Sync to Inkwell"; presence-aware install CTA
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** User-reported confusion: clicking *Embed* in the web app implied the font would become usable immediately on the current page. In reality, the action only persists the font to R2 + Supabase so the Inkwell extension can pick it up — without the extension installed and signed in, the user sees a "success" toast and nothing visible changes anywhere. The label was hiding a prerequisite.
+
+**Context**
+
+The web app's post-generation flow shows two CTAs inside the *Font ready* alert: **Download** and (previously) **Embed**. "Embed" is correct vocabulary in a font-tech sense (embedding the OTF into a persistent store for consumption) but in product copy it reads as "embed in this page" — exactly the wrong mental model. The actual consumer is the Inkwell browser extension, which has its own install + sign-in story.
+
+We also had no signal in either direction between the two apps: the web app couldn't tell whether Inkwell was installed, so the "Get Inkwell" CTA fired unconditionally — including for users who had already installed it.
+
+**Decision**
+
+Three coordinated changes:
+
+1. **Button label.** *Embed* → **Sync to Inkwell**. State transitions: *Sync to Inkwell* → *Syncing…* → *Synced*. The destination is named in the verb itself, removing the "embed in what?" ambiguity.
+2. **Helper line under the action row.** Always visible while the success alert is shown. Two variants, switched by detected extension presence:
+   - Not installed: *"Syncing requires the Inkwell browser extension. **Install Inkwell**"* (link)
+   - Installed: *"Inkwell detected — synced fonts apply automatically on every tab."*
+3. **Presence detection.** The extension's `inkprint-bridge` content script (already scoped to the InkPrint origin) sets `data-inkwell-installed="1"` on `<html>` and dispatches an `inkwell:ready` event. A new `useIsInkwellInstalled` hook in the web app subscribes to both, so the install CTA disappears once Inkwell is detected. The post-sync toast follows the same logic: action button is *Install Inkwell* when absent, omitted entirely when present, and the description copy adapts.
+
+**Rationale**
+
+- **Naming the destination beats describing the mechanism.** "Embed" is the engineer's word for what the API does; "Sync to Inkwell" is the user's word for what they get out of it. The label now teaches the user the product surface they'll need.
+- **Helper line before the click > explainer only after.** The original design relied on the post-success toast to introduce Inkwell. That's too late — by then the user has already wondered why nothing happened. Putting the prerequisite next to the button means users learn it *before* they're confused.
+- **Dynamic CTA respects the user's state.** Telling an Inkwell user to "Get Inkwell" is the same class of bug as the original "Embed" label — copy that ignores what the user has already done. Detecting presence via a content-script-set data attribute is the standard cross-context handshake; cheap to add, no permissions changed, no remote calls, no UA branching.
+- **The handshake is one-way and unprivileged.** The extension advertises presence with a DOM attribute on a specific origin. It's not authentication, not authorization — just "I'm here". The web app uses it for copy decisions only; no security-relevant gating depends on it.
+
+**UX implications**
+
+- Users without the extension see an upfront, low-stakes prompt to install — not a post-action surprise.
+- Users with the extension see confirmation that the system is working, no redundant install nag.
+- The toast remains the celebratory moment but no longer carries the responsibility of explaining the prerequisite.
+- The wording shift ("sync" implies an ongoing relationship, "embed" implies a one-shot operation) sets up future per-site toggles and font-update flows naturally.
+
+**Impact**
+
+- **Changed:** `apps/web/src/components/compose/GenerateFontSection.tsx` — label strings, helper line, dynamic toast.
+- **Added:** `apps/web/src/lib/useIsInkwellInstalled.ts` — presence-detection hook.
+- **Changed:** `apps/inkwell/entrypoints/inkprint-bridge.content.ts` — sets `data-inkwell-installed` and dispatches `inkwell:ready` alongside the existing session sync.
+- **Added:** `NEXT_PUBLIC_INKWELL_INSTALL_URL` to `apps/web/src/lib/env/public.ts` and `.env_sample`. Held as an optional URL so the install CTA renders only when the value is non-empty — flip it on in Vercel the day the extension ships, with no redeploy required. When empty, the helper line still names the prerequisite ("Syncing requires the Inkwell browser extension.") but omits the dead link.
+
+---
+
+## 2026-05-25 — Inkwell extension: scaffold under WXT + React Compiler, cross-browser by construction
+
+**Status:** Accepted (scaffold only; font-injection logic deferred until the read-side API lands)
+**Owner:** Vu Doan
+**Trigger:** The Embed action persists fonts to R2 + Supabase but has no consumer. The browser extension is that consumer — the surface that takes the privately-stored OTF and applies it across the user&rsquo;s web sessions. Standing it up now (with the architecture, deploy story, and AI guardrails decided) means the next chunk of work — fetching auth, fetching font bytes, injecting `@font-face` — drops into a known shape instead of debating tooling.
+
+**Context**
+
+A browser extension is a different runtime than the web app: Manifest V3 service workers, content scripts isolated from page JS context, strict CSP, four target browsers (Chrome, Firefox, Edge, Safari) each with their own store and review cycle. Forcing it into the Next.js codebase would mean dragging extension tooling — manifest generation, MV3-compatible bundling, per-browser zips — into a project that has none of those concerns. The earlier monorepo decision (Turborepo + `apps/*`) was made specifically to host this kind of sibling without the coupling.
+
+**Decision**
+
+Inkwell lives at `apps/inkwell/` as a separate workspace (`@inkprint/inkwell`). Toolchain:
+
+- **WXT** — Vite-based, framework-agnostic web extension toolkit. Handles manifest generation, MV3-safe bundling, HMR, per-browser builds, and store-zipping. One source, four output bundles.
+- **React 19 + React Compiler** — popup UI. Compiler is wired via `@vitejs/plugin-react` v6&rsquo;s `reactCompilerPreset` + `@rolldown/plugin-babel`. Manual `useMemo`/`useCallback`/`memo` is now a code smell; the compiler memoizes automatically.
+- **`browser.*` WebExtensions API** — auto-polyfilled by WXT. Never `chrome.*`. No UA branching. Same source compiles for Chrome, Firefox, Edge, Safari.
+
+The extension is structured around three entrypoints:
+
+1. `entrypoints/background.ts` — service worker. Owns auth, OTF fetching, storage, and broadcasting font updates to open tabs. Service workers can be killed at any time, so **all state persists to `browser.storage.*`** — module-scope state is forbidden.
+2. `entrypoints/content.ts` — runs on every page (`<all_urls>`) at `document_start`. Applies the user&rsquo;s font and watches for SPA navigations (history pushState + MutationObserver fallback) so single-page-app route changes don&rsquo;t lose the font.
+3. `entrypoints/popup/` — React popup UI (sign-in, status, controls).
+
+A per-directory `AGENTS.md` documents the load-bearing rules: cross-browser invariants, no remote code, service-worker lifecycle, content-script isolation, React-Compiler-on, and the deploy matrix. Future contributors (human or AI) read this file before touching the extension.
+
+**Rationale**
+
+- **Cross-browser by construction, not by porting.** Choosing WXT + `browser.*` API up front means every PR builds for all four targets from one source. No "we&rsquo;ll add Firefox support later" technical debt accumulates.
+- **The "font sticks across tabs and pages" promise is architectural, not patched-on.** Background script as single source of truth + content script with SPA-navigation observer + storage-based broadcast — that's what makes tab switches, route changes, and new windows all keep the font applied. A naïve "inject once on load" implementation would lose the font on every SPA route change, which is most modern sites.
+- **Same monorepo, not a sibling repo.** Putting Inkwell next to the web app under Turborepo means future shared code (`packages/contracts` for the API envelope, eventually `packages/core` for stroke math if any extension feature needs it) is one workspace away. The "microservices feel" the user liked is preserved — each app builds, deploys, and ships independently — without forcing duplicate types across repos.
+- **React Compiler over manual memoization.** The popup UI is small now but will grow (sign-in flow, font status, per-site toggles). Compiler-driven memoization means we add features without the usual `useMemo` archaeology.
+- **WXT over Plasmo / CRXJS.** WXT is the most active, most cross-browser-native of the three, Vite-based (matches our React Compiler integration), and has the cleanest store-zip story (`wxt zip --browser <name>` per target).
+
+**UX implications**
+
+The extension is invisible most of the time — it injects the user&rsquo;s font and gets out of the way. The popup is reserved for sign-in, current-font status ("Using *My Handwriting*, last updated 2 minutes ago"), and per-site toggles ("disable on github.com"). Cross-browser parity means Firefox/Safari/Edge users get the exact same experience as Chrome users, no second-class fallback story.
+
+**Impact**
+
+- **Added:** `apps/inkwell/` workspace.
+  - `package.json` — `@inkprint/inkwell`, WXT scripts (`dev`, `build`, `zip` × {chrome,firefox,edge,safari} + `:all` variants), `postinstall: wxt prepare`.
+  - `wxt.config.ts` — manifest (name, description, `storage` + `<all_urls>` permissions), Vite plugins (`@vitejs/plugin-react` + `@rolldown/plugin-babel` with `reactCompilerPreset`).
+  - `tsconfig.json` — extends WXT-generated `.wxt/tsconfig.json`.
+  - `entrypoints/background.ts` — service-worker stub with `onInstalled` listener; TODO for font fetch + cache + broadcast.
+  - `entrypoints/content.ts` — `<all_urls>` content script with `applyFontFromStorage()` stub and `observeSpaNavigations()` helper (real SPA observer, not a stub — keeps the font on history-pushed routes).
+  - `entrypoints/popup/` — minimal React popup (`index.html`, `main.tsx`, `App.tsx`).
+  - `AGENTS.md` — per-directory rules: cross-browser, no remote code, SW lifecycle, content-script isolation, React Compiler on, deploy matrix.
+- **Modified:** none in the web app or root config — Turborepo&rsquo;s `apps/*` workspace pattern picks up the new workspace automatically. `npm run dev` from the root now also spins up Inkwell (`wxt`) in parallel with `next dev`, with both outputs interleaved in Turbo&rsquo;s TUI.
+- **Open follow-ups (deliberately not in this change):**
+  - Real font injection — needs the read-side API (`GET /api/fonts/me`) to exist first, plus Supabase OAuth wired into the extension popup.
+  - Extension icon set (16/32/48/128 PNGs from a single SVG source via `wxt:icons`).
+  - `packages/contracts` workspace for the API envelope and font-metadata types, so the web app and the extension share one TypeScript source of truth on the wire format.
+  - CI matrix that runs `npm run build:all` to gate PRs on cross-browser parity.
+  - Per-site enable/disable UI in the popup.
+  - SPA-navigation observer is currently a URL-poll via MutationObserver — replace with a `chrome.webNavigation.onHistoryStateUpdated` listener in the background and a broadcast to content scripts, which is more efficient and avoids per-DOM-change work.
+
+---
+
+## 2026-05-25 — Embed action: persist the compiled font privately to R2 + Supabase
+
+**Status:** Accepted (write-side only; extension fetch endpoint deferred)
+**Owner:** Vu Doan
+**Trigger:** Splitting generation from download (earlier 2026-05-25 entry) gave us a permanent home in the result panel for non-download actions. The first one we want is the door into the browser-extension story: a single button that snapshots the user&rsquo;s current font into durable storage so a forthcoming extension can fetch it and apply it across the web.
+
+**Context**
+
+A user&rsquo;s handwriting font is, literally, their handwriting — personally identifying. A naïve "store it somewhere reachable by UUID" design would treat the user UUID as both an identity and an access token, and anyone who saw it (in logs, in a shared screenshot, in a URL) would be able to pull the owner&rsquo;s handwriting bytes. That&rsquo;s the wrong default for a personal-data product.
+
+The `fonts` table from `00002_reset_to_per_user_glyph_model.sql` was already shaped for this: `user_id` PK + `otf_key` (R2 path) + `family_name` + `glyph_count` + `last_compiled_at`. R2 credentials and a bucket were already provisioned (`CLOUDFLARE_*` env vars). Nothing about the schema or infra needed to change — only the route that connects the two.
+
+**Decision**
+
+Add a new **Embed** button alongside Download in the success Alert. It calls `POST /api/fonts/embed`, which:
+
+1. Verifies the caller&rsquo;s Supabase session matches the `userId` in the body (rejects mismatches with 403). Generate stays trust-the-body — it&rsquo;s read-only over the caller&rsquo;s own glyphs — but Embed writes real resources and so requires session-verified ownership.
+2. Re-runs the same compile pipeline as Generate (we never trust client-supplied bytes for what we persist).
+3. Uploads the OTF to a **private** R2 bucket at the stable key `fonts/{userId}/latest.otf`. One key per user, overwritten on each embed, so the extension can fetch a single predictable path without versioning.
+4. Upserts the `fonts` row (`user_id` PK) with `family_name`, `otf_key`, `glyph_count`, `last_compiled_at`.
+
+The R2 bucket stays private. No public URLs are ever generated. The future browser-extension fetch path (deferred) will require the owner&rsquo;s Supabase session — `auth.uid()` must equal `fonts.user_id`. Knowing a UUID alone does not grant access.
+
+**Rationale**
+
+- **Private by default.** Handwriting is biometric-adjacent. Treating the UUID as a security boundary would be wrong; only the authenticated owner should be able to read their font. If a marketplace / sharing surface ever lands, opt-in publication is added on top, not retrofitted under.
+- **Re-compile, never accept blob.** The Embed button is presented right next to a known-good blob in browser memory, but the route still re-compiles from glyph rows. Persisting client-supplied bytes would mean trusting an untrusted artefact for what every other user-agent eventually downloads.
+- **Stable key, overwrite semantics.** `fonts/{userId}/latest.otf` matches the one-font-per-user database shape and means the extension never has to track versions. The downside (orphaned R2 objects if we ever go multi-font) is mooted by the schema constraint that already gates this.
+- **No GET endpoint in this change.** Adding the read path requires extension-side auth (Supabase OAuth in the extension), which doesn&rsquo;t exist yet. Building a placeholder GET now would either be insecure or have to be reworked. Defer until the extension exists.
+
+**UX implications**
+
+The success Alert now hosts two actions: secondary **Embed** (Cloud icon) and primary **Download**. Embed has its own four-state lifecycle (`idle` → `embedding` → `embedded` / `error`) decoupled from the generation state. While embedding, the button shows a spinner and is disabled; on success it locks to "Embedded" with a check icon; on failure, an error line appears beneath the row and the button re-enables for retry. Embed state resets to idle whenever a fresh generation completes — the user can re-embed after regenerating.
+
+Embed uses the `familyName` captured **at generation time**, not the current input value. If the user edits the input after generating but before embedding, the persisted family name still matches the file in their hand.
+
+The action row uses `flex-wrap` + `ml-auto` on the button cluster so on narrow viewports the two buttons drop to a second line right-aligned, without colliding with the filename.
+
+**Impact**
+
+- **Added:**
+  - `src/lib/r2.ts` — S3 client targeting Cloudflare R2 (`<account>.r2.cloudflarestorage.com`), `putObject` helper, `userFontKey(userId)` for the stable key.
+  - `src/app/api/fonts/embed/route.ts` — session-verified compile + upload + upsert.
+  - `requestFontEmbed` in `src/lib/apiClient.ts`; `postEnvelope` gained an optional `signal`.
+  - Embed button, `EmbedState` machine, `handleEmbed`, `embedButtonLabel` in `GenerateFontSection.tsx`. Success state now carries `familyName`.
+- **Modified:**
+  - `src/lib/env/server.ts` — adds `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ACCESS_KEY`, `CLOUDFLARE_SECRET_KEY`, `CLOUDFLARE_BUCKET_NAME` (all already populated in `.env_sample` / `.env`).
+  - `package.json` — `@aws-sdk/client-s3` added.
+- **Unchanged but newly load-bearing:**
+  - `fonts` table from `00002` migration. RLS has SELECT + INSERT policies only — we write via service-role admin client which bypasses RLS, so no UPDATE policy needed for the upsert path.
+- **Open follow-ups (deliberately not in this change):**
+  - `GET /api/fonts/me` (session-verified, streams OTF from R2 or returns a short-lived signed URL) — required for the extension to actually consume the embedded font. Blocked on extension auth design.
+  - Browser extension itself: Supabase OAuth flow inside the extension, `@font-face` injection at document_start across sites the user has enabled.
+  - Multi-font / named-font support — when there&rsquo;s a reason for it. The current 1:1 schema is fine for the personal-handwriting case.
+  - Sharing / publication — explicit opt-in surface if a marketplace ever lands.
+
+---
+
+## 2026-05-25 — Split font generation from file download
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** Auto-triggering a browser save as the terminal step of Generate Font conflated two distinct ideas — *producing the artefact* and *acting on it*. The success state was a single sentence acknowledging a download that already happened, leaving nowhere to add the other things a freshly-compiled font should let you do: re-download on demand, embed it for use across the browser, copy an embed snippet, save it to an account.
+
+**Decision**
+
+Generate Font produces the compiled `.otf` and stops. The client receives the bytes as an in-memory `Blob` and stores them in the component&rsquo;s success state alongside the server-supplied filename. A new result panel renders below the form showing the filename and a primary **Download** button; clicking it is what triggers the browser save. The download is now its own client-side concern (`downloadFontFile`) decoupled from the generation request. The `/api/fonts/generate` route is unchanged — it already returns bytes synchronously; the client just stops auto-saving them.
+
+**Rationale**
+
+- **Generation and action are different verbs.** Conflating them meant the only "what next?" the UI offered was the file the OS already saved. Splitting them gives the success state a permanent home for future actions.
+- **Future-proof for in-browser use.** Embedding the font into the active browser (FontFace API + local persistence) and "copy embed snippet" both want the same in-memory `Blob` we now hold. They become incremental additions inside the result panel rather than re-fetches.
+- **Honest UX.** Auto-downloads can feel coercive — the user clicked Generate, not Save. Asking explicitly to download respects that distinction and matches how users expect previewable artefacts to behave.
+- **Endpoint untouched.** The synchronous compile decision (see 2026-05-22 entry) still holds. No persistence, no second round-trip — just a different terminal action on the bytes that were already in hand.
+
+**UX implications**
+
+The four-state Generate Font UX (`submitting` → `slow` → `success` / `error`) becomes five-step in effect: the success state is now interactive, not a notification. The result panel uses the existing `Alert` atom (success variant) with the filename in a monospace span and a Download button. The confirm dialog copy drops "and download it to your computer" — the dialog now promises compilation only, with download offered when the file is ready.
+
+The result panel is deliberately the docking point for forthcoming actions (embed on this browser, copy embed snippet, save to account once auth gains a fonts table). Each lands as a new button next to Download without further restructuring.
+
+**Impact**
+
+- **Modified:** `src/lib/apiClient.ts` — `requestFontGeneration` returns `{ blob, filename }` instead of triggering a download; new exported `downloadFontFile(blob, filename)` helper.
+- **Modified:** `src/components/compose/GenerateFontSection.tsx` — success state now carries the `Blob`; result panel renders an `Alert` with a Download button; confirm dialog copy updated.
+- **Unchanged:** `src/app/api/fonts/generate/route.ts` — the response shape (font bytes + `Content-Disposition`) is already correct; the client decides when to consume it.
+- **Open follow-ups (deliberately not in this change):** embed-on-this-browser action (FontFace + IndexedDB persistence), copy embed snippet, save-to-account once font persistence lands for signed-in users.
+
+---
+
+## 2026-05-22 — Auto-compose diacritics from accent primitives
+
+**Status:** Accepted (Phase 1a — procedural composition only)
+**Owner:** Vu Doan
+**Trigger:** Competitive research established that no incumbent in the handwriting-font space (Calligraphr, FontCraft, iFontMaker, Fontself) auto-generates *any* glyphs — users hand-draw all 60–600 characters themselves. Inkprint's stroke-based capture is a structural advantage we hadn't exploited.
+
+**Context**
+
+Drawing 94 (or 600) glyphs is the dominant time sink for users producing a personal font. The labour grows roughly linearly with the language coverage requested. Pure Latin Basic users already balk at 71 hand-drawn glyphs; Vietnamese users would face ~150 lowercase forms alone if asked to draw every tone × vowel combination by hand. Competitive products treat this as an inherent property of the medium because they store glyphs as bitmaps (Calligraphr, FontCraft) — bitmap composition produces visible seams and artefacts, so they don't attempt it.
+
+Inkprint already stores every glyph as a vector stroke sequence (`StrokePoint[]` in a 1000-unit em space), with full spatial freedom and pressure preserved. Vector composition — translate, stack, concatenate — produces results that are byte-for-byte identical to a hand-drawn glyph with the same strokes. There is no quality penalty, no "looks composed" tell.
+
+The full plan considers three tiers (procedural composition, retrieval, ML extrapolation). This decision covers Tier 1 only.
+
+**Decision**
+
+Add a "Western European & Vietnamese" character set built around 9 user-drawn accent primitives (acute, grave, circumflex, diaeresis, tilde, breve, hook above, dot below, horn). Compose ~75 lowercase diacritic targets — every Western European Latin-1 Supplement letter plus the full Vietnamese tone × vowel-modifier matrix (ấ, ổ, ử, ừ, ự, ỡ, ỹ, etc.) — by stacking primitives over base letters the user already drew. Multi-mark recipes are supported, so chained forms like ổ (o + circumflex + hook) compose in one pass via dependency-ordered topology.
+
+Auto-composed glyphs are persisted in the same `glyphs` table as hand-drawn ones, distinguished only by a new `source` column (`'drawn' | 'composed'`). They appear in the grid as regular cells with a small ✨ badge, and **open in the existing drawing/edit modal unchanged**: tweaking a composed glyph is the same operation as tweaking a hand-drawn one. The moment a user edits a composed glyph and saves, its source flips to `'drawn'` and the auto-filler will never overwrite it.
+
+Capitals, retrieval-based borrowing from Google Fonts, and stroke-conditional ML extrapolation are explicitly **out of scope** for this phase. They remain on the Phase 2 list.
+
+**Rationale**
+
+- **The composition is lossless.** Vector strokes carry pressure and the user's own line characteristics; placing them above a base preserves both. The composed `à` looks as hand-drawn as the `a` and the `\`` it came from, because it *is* those strokes.
+- **It's a "review and tweak" UX, not an "AI approval" UX.** Composed glyphs aren't a different first-class type; they're regular glyphs with a tag. The user never has to learn a new editor or commit to AI output — they tweak the same way they'd tweak any glyph.
+- **Vietnamese users get an immediately useful product.** Without composition, a Vietnamese font needs ~150 lowercase hand-drawn glyphs. With composition + 9 mark primitives + 26 lowercase bases + 6 modified vowels (ă, â, ê, ô, ơ, ư) = ~41 hand-drawn glyphs, the remaining ~75 are derived. Roughly a 65% reduction in manual work.
+- **No ML risk in Phase 1.** Pure geometry, no inference latency, no model hosting, no quality variance across users. Ships independently of Phase 2.
+- **Dependency-ordered composition.** Vietnamese forces a chain: ổ depends on ô, which depends on o. The composer pre-sorts recipes topologically so a single pass over `composeAll` resolves everything.
+
+**UX implications**
+
+The "Vietnamese & Western European" set replaces what would have been a stratified seed/full split. The grid renders ~155 cells; 9 of them (the accent primitives) carry text labels like "Hook above" instead of an empty glyph slot, because their Unicode code points (U+E000–U+E002, PUA) have no system-font renderings. PUA cells also use a `◌̛`-style dotted-circle ghost on the canvas so the user can see the mark shape they're tracing.
+
+After drawing primitives + bases, a brand-tinted banner appears above the grid: *"X diacritic letters ready to auto-fill"* with a Sparkles button. One tap composes every resolvable target. Composed cells gain a small ✨ corner badge so the user knows which ones to review. The badge stays until the user saves an edit, at which point the cell becomes indistinguishable from a hand-drawn one.
+
+The basic Latin set (`latin-basic`, 71 chars) is unchanged — there's no migration burden for existing English-only users.
+
+**Impact**
+
+- **New:**
+  - `src/lib/glyphComposition.ts` + tests — 9 mark positions, ~75 recipes, dependency-ordered `composeAll`, i/j tittle stripping (tight "fully above" check so it doesn't nuke a t-bar).
+  - `latin-extended` entry in `src/lib/characterSets.ts` with 9 primitives + 75 composable targets.
+  - `PRIMITIVE_LABELS` / `PRIMITIVE_GHOSTS` / `glyphDisplayLabel` / `glyphGhostChar` helpers for PUA cells.
+  - Auto-fill section in `InkprintApp.tsx` (banner + Sparkles button + result toasts).
+  - Migration `00008_add_source_to_glyphs.sql`.
+- **Modified:**
+  - `glyphs` table gets a `source` column (`'drawn' | 'composed'`, backfilled to `'drawn'`).
+  - `GlyphRecord` / Zod schemas / both API routes plumb `source` through.
+  - `GlyphCell` renders the ✨ badge and primitive labels.
+  - `DrawingModal` shows the role label in the header for PUA primitives and the dotted-circle ghost on the canvas.
+- **Deliberately deferred:**
+  - Uppercase diacritics (À, Á, Ă, Ơ, Ư, etc.).
+  - "Recompose composed glyphs" UX after a primitive is later tweaked. Today, composing again only fills empty cells; refreshing stale composed glyphs is a manual round-trip.
+  - Bulk `/api/glyphs` endpoint. Auto-fill currently fires N parallel PUTs (~75 worst-case). Acceptable for the v1 user base; collapses to one round-trip when it becomes a bottleneck.
+  - Phase 2 (retrieval and ML extrapolation).
+
+---
+
 ## 2026-05-22 — Drop the job queue; compile fonts synchronously
 
 **Status:** Accepted
