@@ -2,10 +2,17 @@ import { useEffect, useState } from 'react';
 import { Button } from '@inkprint/ui';
 import type { WxtStorageItem } from 'wxt/utils/storage';
 import type { ExtensionMessage, ExtensionResponse } from '@/lib/messages';
-import { WEB_APP_URL, sessionItem, type SessionRecord } from '@/lib/storage';
+import { WEB_APP_URL } from '@/lib/env';
+import { sessionItem, type SessionRecord } from '@/lib/storage';
 
 export function App() {
   const session = useStorageItem(sessionItem);
+
+  // On every popup open, ask the background to re-check /api/me. Handles the
+  // "already signed in on web" case and picks up post-OAuth sign-ins.
+  useEffect(() => {
+    void sendMessage({ type: 'REFRESH_SESSION' });
+  }, []);
 
   if (session === undefined) return <LoadingView />;
   if (session === null) return <SignInView />;
@@ -22,10 +29,7 @@ function LoadingView() {
 
 function SignInView() {
   const handleSignIn = (): void => {
-    // TODO: replace with a /extension-connect route on the web app that
-    // postMessages the Supabase session back to this extension. For now this
-    // just sends the user through the existing web sign-in flow.
-    void browser.tabs.create({ url: `${WEB_APP_URL}/extension-connect` });
+    void browser.tabs.create({ url: WEB_APP_URL });
   };
 
   return (
@@ -34,13 +38,15 @@ function SignInView() {
         Inkwell
       </h1>
       <p className="text-sm text-surface-600 dark:text-surface-300">
-        Your handwriting, everywhere on the web.
+        Sign in with your InkPrint account so Inkwell can find the fonts you&rsquo;ve
+        created and apply them everywhere on the web.
       </p>
       <Button variant="primary" size="md" fullWidth onClick={handleSignIn}>
-        Sign in with InkPrint
+        Sign in on InkPrint
       </Button>
       <p className="text-center text-xs text-surface-500 dark:text-surface-400">
-        Sign in on the InkPrint web app to connect your font.
+        We&rsquo;ll open InkPrint in a new tab. Sign in there, then come back —
+        Inkwell picks up your account automatically.
       </p>
     </main>
   );
@@ -55,7 +61,7 @@ function SignedInView({ session }: { session: SessionRecord }) {
     let cancelled = false;
     void sendMessage({ type: 'GET_FONT_STATE' }).then((res) => {
       if (cancelled) return;
-      if (res.ok) setAppliedFamily(res.data.familyName);
+      if (res.ok) setAppliedFamily(res.data?.familyName);
       else setError(res.error);
     });
     return () => {
@@ -68,7 +74,7 @@ function SignedInView({ session }: { session: SessionRecord }) {
     setError(null);
     const res = await sendMessage({ type: 'APPLY_FONT' });
     setIsBusy(false);
-    if (res.ok) setAppliedFamily(res.data.familyName);
+    if (res.ok) setAppliedFamily(res.data?.familyName);
     else setError(res.error);
   };
 

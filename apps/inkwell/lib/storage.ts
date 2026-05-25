@@ -1,16 +1,17 @@
 export type SessionRecord = {
   userId: string;
   email: string;
-  accessToken: string;
-  refreshToken: string;
 };
 
 export type AppliedFont = {
   familyName: string;
-  // Base64-encoded OTF bytes. Optional: when null, content scripts apply the
-  // family-name CSS rule without an `@font-face`, so the browser falls back to
-  // `cursive`. Real bytes flow in once the read-side API exists.
   bytesBase64: string | null;
+};
+
+export type CachedFont = {
+  familyName: string;
+  bytesBase64: string;
+  cachedAt: number;
 };
 
 // Session is the user's signed-in token, mirrored from the web app's Supabase
@@ -26,6 +27,6 @@ export const appliedFontItem = storage.defineItem<AppliedFont | null>('local:app
   fallback: null,
 });
 
-// Hardcoded for now — TODO: drive from VITE_PUBLIC_WEB_APP_URL once the
-// extension has a real .env, and switch on import.meta.env.MODE for prod.
-export const WEB_APP_URL = 'http://localhost:3000';
+export const cachedFontItem = storage.defineItem<CachedFont | null>('local:cachedFont', {
+  fallback: null,
+});

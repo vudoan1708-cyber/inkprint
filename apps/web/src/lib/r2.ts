@@ -1,5 +1,5 @@
 import 'server-only';
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { serverEnv } from '@/lib/env/server';
 
 const r2Client = new S3Client({
@@ -28,6 +28,12 @@ export async function putObject(input: {
       CacheControl: input.cacheControl ?? 'public, max-age=300',
     }),
   );
+}
+
+export async function getObject(key: string): Promise<Uint8Array> {
+  const res = await r2Client.send(new GetObjectCommand({ Bucket: R2_BUCKET, Key: key }));
+  if (!res.Body) throw new Error(`R2 object not found: ${key}`);
+  return await res.Body.transformToByteArray();
 }
 
 // One stable key per user — re-embeds overwrite in place so the extension

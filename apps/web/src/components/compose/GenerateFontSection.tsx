@@ -7,12 +7,13 @@ import { Button } from '@inkprint/ui';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
 import { downloadFontFile, requestFontEmbed, requestFontGeneration } from '@/lib/apiClient';
+import { publicEnv } from '@/lib/env/public';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { useAuth } from '@/lib/useAuth';
+import { useIsInkwellInstalled } from '@/lib/useIsInkwellInstalled';
 import { toast } from '@/components/ui/Toaster';
 
-// TODO: replace with the live install URL once the Inkwell extension ships.
-const INKWELL_EXTENSION_URL = '#';
+const INKWELL_INSTALL_URL = publicEnv.NEXT_PUBLIC_INKWELL_INSTALL_URL;
 const EMBED_TOAST_DURATION_MS = 10000;
 
 type Props = {
@@ -41,9 +42,31 @@ function computeButtonLabel({
 }
 
 function embedButtonLabel(state: EmbedState): string {
-  if (state.status === 'embedding') return 'Embedding…';
-  if (state.status === 'embedded') return 'Embedded';
-  return 'Embed';
+  if (state.status === 'embedding') return 'Syncing…';
+  if (state.status === 'embedded') return 'Synced';
+  return 'Sync to Inkwell';
+}
+
+function renderInkwellHelper(isInkwellInstalled: boolean): React.ReactNode {
+  if (isInkwellInstalled) {
+    return <>Inkwell detected — synced fonts apply automatically on every tab.</>;
+  }
+  if (!INKWELL_INSTALL_URL) {
+    return <>Syncing requires the Inkwell browser extension.</>;
+  }
+  return (
+    <>
+      Syncing requires the Inkwell browser extension.{' '}
+      <a
+        href={INKWELL_INSTALL_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-medium text-brand-700 underline-offset-2 hover:underline dark:text-brand-300"
+      >
+        Install Inkwell
+      </a>
+    </>
+  );
 }
 
 function validateFamilyName(value: string): string | null {
@@ -79,6 +102,7 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
   const auth = useAuth();
   const isSignedIn = auth.status === 'signed-in';
   const isAuthLoading = auth.status === 'loading';
+  const isInkwellInstalled = useIsInkwellInstalled();
 
   const validationError = validateFamilyName(familyName);
   const hasGlyphs = drawnGlyphCount > 0;
@@ -165,13 +189,18 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
         signal: controller.signal,
       });
       setEmbedState({ status: 'embedded' });
-      toast.success('Font embedded', {
-        description: 'Open Inkwell to apply it everywhere. Don’t have it yet?',
+      toast.success('Synced to Inkwell', {
+        description: isInkwellInstalled
+          ? 'Open any tab — Inkwell will apply this font automatically.'
+          : 'Install Inkwell to start using this font on every page.',
         duration: EMBED_TOAST_DURATION_MS,
-        action: {
-          label: 'Get Inkwell',
-          onClick: () => window.open(INKWELL_EXTENSION_URL, '_blank', 'noopener,noreferrer'),
-        },
+        action:
+          isInkwellInstalled || !INKWELL_INSTALL_URL
+            ? undefined
+            : {
+                label: 'Install Inkwell',
+                onClick: () => window.open(INKWELL_INSTALL_URL, '_blank', 'noopener,noreferrer'),
+              },
       });
     } catch (error) {
       setEmbedState({
@@ -254,6 +283,9 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
               </Button>
             </div>
           </div>
+          {embedState.status !== 'error' ? (
+            <p className="mt-2 text-xs text-surface-500">{renderInkwellHelper(isInkwellInstalled)}</p>
+          ) : null}
           {embedState.status === 'error' ? (
             <p role="alert" className="mt-2 text-sm text-danger-700 dark:text-danger-200">
               {embedState.message}

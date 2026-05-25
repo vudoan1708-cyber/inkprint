@@ -20,13 +20,24 @@ export default defineContentScript({
   },
 });
 
+// `browser.runtime.id` is undefined once the extension reloads or unloads.
+// Bail out instead of throwing inside MutationObserver / message handlers.
+function isContextAlive(): boolean {
+  return Boolean(browser.runtime?.id);
+}
+
 async function applyFromStorage(): Promise<void> {
-  const applied = await appliedFontItem.getValue();
-  if (!applied) {
-    removeFont();
-    return;
+  if (!isContextAlive()) return;
+  try {
+    const applied = await appliedFontItem.getValue();
+    if (!applied) {
+      removeFont();
+      return;
+    }
+    injectFont(applied);
+  } catch {
+    // Context was invalidated mid-call (extension reload). Stop quietly.
   }
-  injectFont(applied);
 }
 
 function injectFont(applied: AppliedFont): void {

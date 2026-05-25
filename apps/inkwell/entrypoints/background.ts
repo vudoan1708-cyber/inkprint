@@ -1,22 +1,18 @@
 import type { ExtensionMessage, ExtensionResponse } from '@/lib/messages';
-import { appliedFontItem } from '@/lib/storage';
+import { WEB_APP_URL } from '@/lib/env';
+import { appliedFontItem, cachedFontItem, sessionItem, type SessionRecord } from '@/lib/storage';
 
 export default defineBackground(() => {
-  // Service workers can die any second — keep nothing in module scope.
-  // All persistent state lives in browser.storage.* via the items in lib/storage.
-
   browser.runtime.onMessage.addListener(
     (message: ExtensionMessage, _sender, sendResponse: (r: ExtensionResponse) => void) => {
       handleMessage(message).then(sendResponse).catch((err) => {
         sendResponse({ ok: false, error: err instanceof Error ? err.message : 'Unknown error' });
       });
-      // Returning true keeps the message channel open for the async response.
       return true;
     },
   );
 
-  // When the applied-font changes (from any tab or the popup), broadcast to
-  // every open tab so content scripts re-apply without needing a page reload.
+  // Broadcast applied-font changes so every open tab re-applies without reload.
   appliedFontItem.watch(async () => {
     const tabs = await browser.tabs.query({});
     await Promise.allSettled(
@@ -25,6 +21,10 @@ export default defineBackground(() => {
         .map((t) => browser.tabs.sendMessage(t.id!, { type: 'APPLIED_FONT_CHANGED' })),
     );
   });
+
+  // Check session on install/startup so a pre-existing web session is detected
+  // without the user having to open the popup first.
+  void refreshSession();
 });
 
 async function handleMessage(message: ExtensionMessage): Promise<ExtensionResponse> {
@@ -34,12 +34,15 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
   }
 
   if (message.type === 'APPLY_FONT') {
-    // TODO: fetch real OTF bytes from GET /api/fonts/me using the stored
-    // Supabase session, then base64-encode and persist. For now, store the
-    // family name with null bytes so the apply mechanism is wired end-to-end
-    // even though the visual fallback is whatever the OS exposes as `cursive`.
-    await appliedFontItem.setValue({ familyName: 'My Handwriting', bytesBase64: null });
-    return { ok: true, data: { applied: true, familyName: 'My Handwriting' } };
+    const cache = await cachedFontItem.getValue();
+    if (!cache) {
+      return {
+        ok: false,
+        error: 'Font not ready yet. Open an InkPrint tab so Inkwell can load your font, then try again.',
+      };
+    }
+    await appliedFontItem.setValue({ familyName: cache.familyName, bytesBase64: cache.bytesBase64 });
+    return { ok: true, data: { applied: true, familyName: cache.familyName } };
   }
 
   if (message.type === 'UNAPPLY_FONT') {
@@ -47,5 +50,60 @@ async function handleMessage(message: ExtensionMessage): Promise<ExtensionRespon
     return { ok: true, data: { applied: false, familyName: null } };
   }
 
+  if (message.type === 'REFRESH_SESSION') {
+    await refreshSession();
+    return { ok: true };
+  }
+
+  if (message.type === 'SET_SESSION') {
+    await writeSession(message.session);
+    return { ok: true };
+  }
+
+  if (message.type === 'SET_FONT_CACHE') {
+    await cachedFontItem.setValue(message.cache);
+    // If a font is currently applied, refresh it with the new bytes (e.g. user
+    // re-embedded a different version of their font).
+    const applied = await appliedFontItem.getValue();
+    if (applied && message.cache) {
+      await appliedFontItem.setValue({
+        familyName: message.cache.familyName,
+        bytesBase64: message.cache.bytesBase64,
+      });
+    }
+    return { ok: true };
+  }
+
   return { ok: false, error: 'Unknown message type' };
+}
+
+async function writeSession(next: SessionRecord | null): Promise<void> {
+  const previous = await sessionItem.getValue();
+  if (previous?.userId !== next?.userId) {
+    await appliedFontItem.setValue(null);
+  }
+  await sessionItem.setValue(next);
+}
+
+// Best-effort: SameSite-Lax cookies don't always travel in MV3 SW fetches.
+// The bridge content script is the authoritative path; this is just a hint.
+async function refreshSession(): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`${WEB_APP_URL}/api/me`, { credentials: 'include' });
+  } catch (err) {
+    console.error('[Inkwell] refreshSession fetch error:', err);
+    return;
+  }
+
+  if (res.status === 401) {
+    await writeSession(null);
+    return;
+  }
+  if (!res.ok) return;
+
+  const body = (await res.json()) as { ok: boolean; data?: { userId: string; email: string } };
+  if (body.ok && body.data) {
+    await writeSession({ userId: body.data.userId, email: body.data.email });
+  }
 }

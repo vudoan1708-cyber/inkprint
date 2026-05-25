@@ -6,6 +6,51 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-25 — Rename "Embed" → "Sync to Inkwell"; presence-aware install CTA
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** User-reported confusion: clicking *Embed* in the web app implied the font would become usable immediately on the current page. In reality, the action only persists the font to R2 + Supabase so the Inkwell extension can pick it up — without the extension installed and signed in, the user sees a "success" toast and nothing visible changes anywhere. The label was hiding a prerequisite.
+
+**Context**
+
+The web app's post-generation flow shows two CTAs inside the *Font ready* alert: **Download** and (previously) **Embed**. "Embed" is correct vocabulary in a font-tech sense (embedding the OTF into a persistent store for consumption) but in product copy it reads as "embed in this page" — exactly the wrong mental model. The actual consumer is the Inkwell browser extension, which has its own install + sign-in story.
+
+We also had no signal in either direction between the two apps: the web app couldn't tell whether Inkwell was installed, so the "Get Inkwell" CTA fired unconditionally — including for users who had already installed it.
+
+**Decision**
+
+Three coordinated changes:
+
+1. **Button label.** *Embed* → **Sync to Inkwell**. State transitions: *Sync to Inkwell* → *Syncing…* → *Synced*. The destination is named in the verb itself, removing the "embed in what?" ambiguity.
+2. **Helper line under the action row.** Always visible while the success alert is shown. Two variants, switched by detected extension presence:
+   - Not installed: *"Syncing requires the Inkwell browser extension. **Install Inkwell**"* (link)
+   - Installed: *"Inkwell detected — synced fonts apply automatically on every tab."*
+3. **Presence detection.** The extension's `inkprint-bridge` content script (already scoped to the InkPrint origin) sets `data-inkwell-installed="1"` on `<html>` and dispatches an `inkwell:ready` event. A new `useIsInkwellInstalled` hook in the web app subscribes to both, so the install CTA disappears once Inkwell is detected. The post-sync toast follows the same logic: action button is *Install Inkwell* when absent, omitted entirely when present, and the description copy adapts.
+
+**Rationale**
+
+- **Naming the destination beats describing the mechanism.** "Embed" is the engineer's word for what the API does; "Sync to Inkwell" is the user's word for what they get out of it. The label now teaches the user the product surface they'll need.
+- **Helper line before the click > explainer only after.** The original design relied on the post-success toast to introduce Inkwell. That's too late — by then the user has already wondered why nothing happened. Putting the prerequisite next to the button means users learn it *before* they're confused.
+- **Dynamic CTA respects the user's state.** Telling an Inkwell user to "Get Inkwell" is the same class of bug as the original "Embed" label — copy that ignores what the user has already done. Detecting presence via a content-script-set data attribute is the standard cross-context handshake; cheap to add, no permissions changed, no remote calls, no UA branching.
+- **The handshake is one-way and unprivileged.** The extension advertises presence with a DOM attribute on a specific origin. It's not authentication, not authorization — just "I'm here". The web app uses it for copy decisions only; no security-relevant gating depends on it.
+
+**UX implications**
+
+- Users without the extension see an upfront, low-stakes prompt to install — not a post-action surprise.
+- Users with the extension see confirmation that the system is working, no redundant install nag.
+- The toast remains the celebratory moment but no longer carries the responsibility of explaining the prerequisite.
+- The wording shift ("sync" implies an ongoing relationship, "embed" implies a one-shot operation) sets up future per-site toggles and font-update flows naturally.
+
+**Impact**
+
+- **Changed:** `apps/web/src/components/compose/GenerateFontSection.tsx` — label strings, helper line, dynamic toast.
+- **Added:** `apps/web/src/lib/useIsInkwellInstalled.ts` — presence-detection hook.
+- **Changed:** `apps/inkwell/entrypoints/inkprint-bridge.content.ts` — sets `data-inkwell-installed` and dispatches `inkwell:ready` alongside the existing session sync.
+- **Added:** `NEXT_PUBLIC_INKWELL_INSTALL_URL` to `apps/web/src/lib/env/public.ts` and `.env_sample`. Held as an optional URL so the install CTA renders only when the value is non-empty — flip it on in Vercel the day the extension ships, with no redeploy required. When empty, the helper line still names the prerequisite ("Syncing requires the Inkwell browser extension.") but omits the dead link.
+
+---
+
 ## 2026-05-25 — Inkwell extension: scaffold under WXT + React Compiler, cross-browser by construction
 
 **Status:** Accepted (scaffold only; font-injection logic deferred until the read-side API lands)
