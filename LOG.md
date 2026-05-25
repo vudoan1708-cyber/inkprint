@@ -6,6 +6,96 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-25 — Embed action: persist the compiled font privately to R2 + Supabase
+
+**Status:** Accepted (write-side only; extension fetch endpoint deferred)
+**Owner:** Vu Doan
+**Trigger:** Splitting generation from download (earlier 2026-05-25 entry) gave us a permanent home in the result panel for non-download actions. The first one we want is the door into the browser-extension story: a single button that snapshots the user&rsquo;s current font into durable storage so a forthcoming extension can fetch it and apply it across the web.
+
+**Context**
+
+A user&rsquo;s handwriting font is, literally, their handwriting — personally identifying. A naïve "store it somewhere reachable by UUID" design would treat the user UUID as both an identity and an access token, and anyone who saw it (in logs, in a shared screenshot, in a URL) would be able to pull the owner&rsquo;s handwriting bytes. That&rsquo;s the wrong default for a personal-data product.
+
+The `fonts` table from `00002_reset_to_per_user_glyph_model.sql` was already shaped for this: `user_id` PK + `otf_key` (R2 path) + `family_name` + `glyph_count` + `last_compiled_at`. R2 credentials and a bucket were already provisioned (`CLOUDFLARE_*` env vars). Nothing about the schema or infra needed to change — only the route that connects the two.
+
+**Decision**
+
+Add a new **Embed** button alongside Download in the success Alert. It calls `POST /api/fonts/embed`, which:
+
+1. Verifies the caller&rsquo;s Supabase session matches the `userId` in the body (rejects mismatches with 403). Generate stays trust-the-body — it&rsquo;s read-only over the caller&rsquo;s own glyphs — but Embed writes real resources and so requires session-verified ownership.
+2. Re-runs the same compile pipeline as Generate (we never trust client-supplied bytes for what we persist).
+3. Uploads the OTF to a **private** R2 bucket at the stable key `fonts/{userId}/latest.otf`. One key per user, overwritten on each embed, so the extension can fetch a single predictable path without versioning.
+4. Upserts the `fonts` row (`user_id` PK) with `family_name`, `otf_key`, `glyph_count`, `last_compiled_at`.
+
+The R2 bucket stays private. No public URLs are ever generated. The future browser-extension fetch path (deferred) will require the owner&rsquo;s Supabase session — `auth.uid()` must equal `fonts.user_id`. Knowing a UUID alone does not grant access.
+
+**Rationale**
+
+- **Private by default.** Handwriting is biometric-adjacent. Treating the UUID as a security boundary would be wrong; only the authenticated owner should be able to read their font. If a marketplace / sharing surface ever lands, opt-in publication is added on top, not retrofitted under.
+- **Re-compile, never accept blob.** The Embed button is presented right next to a known-good blob in browser memory, but the route still re-compiles from glyph rows. Persisting client-supplied bytes would mean trusting an untrusted artefact for what every other user-agent eventually downloads.
+- **Stable key, overwrite semantics.** `fonts/{userId}/latest.otf` matches the one-font-per-user database shape and means the extension never has to track versions. The downside (orphaned R2 objects if we ever go multi-font) is mooted by the schema constraint that already gates this.
+- **No GET endpoint in this change.** Adding the read path requires extension-side auth (Supabase OAuth in the extension), which doesn&rsquo;t exist yet. Building a placeholder GET now would either be insecure or have to be reworked. Defer until the extension exists.
+
+**UX implications**
+
+The success Alert now hosts two actions: secondary **Embed** (Cloud icon) and primary **Download**. Embed has its own four-state lifecycle (`idle` → `embedding` → `embedded` / `error`) decoupled from the generation state. While embedding, the button shows a spinner and is disabled; on success it locks to "Embedded" with a check icon; on failure, an error line appears beneath the row and the button re-enables for retry. Embed state resets to idle whenever a fresh generation completes — the user can re-embed after regenerating.
+
+Embed uses the `familyName` captured **at generation time**, not the current input value. If the user edits the input after generating but before embedding, the persisted family name still matches the file in their hand.
+
+The action row uses `flex-wrap` + `ml-auto` on the button cluster so on narrow viewports the two buttons drop to a second line right-aligned, without colliding with the filename.
+
+**Impact**
+
+- **Added:**
+  - `src/lib/r2.ts` — S3 client targeting Cloudflare R2 (`<account>.r2.cloudflarestorage.com`), `putObject` helper, `userFontKey(userId)` for the stable key.
+  - `src/app/api/fonts/embed/route.ts` — session-verified compile + upload + upsert.
+  - `requestFontEmbed` in `src/lib/apiClient.ts`; `postEnvelope` gained an optional `signal`.
+  - Embed button, `EmbedState` machine, `handleEmbed`, `embedButtonLabel` in `GenerateFontSection.tsx`. Success state now carries `familyName`.
+- **Modified:**
+  - `src/lib/env/server.ts` — adds `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_ACCESS_KEY`, `CLOUDFLARE_SECRET_KEY`, `CLOUDFLARE_BUCKET_NAME` (all already populated in `.env_sample` / `.env`).
+  - `package.json` — `@aws-sdk/client-s3` added.
+- **Unchanged but newly load-bearing:**
+  - `fonts` table from `00002` migration. RLS has SELECT + INSERT policies only — we write via service-role admin client which bypasses RLS, so no UPDATE policy needed for the upsert path.
+- **Open follow-ups (deliberately not in this change):**
+  - `GET /api/fonts/me` (session-verified, streams OTF from R2 or returns a short-lived signed URL) — required for the extension to actually consume the embedded font. Blocked on extension auth design.
+  - Browser extension itself: Supabase OAuth flow inside the extension, `@font-face` injection at document_start across sites the user has enabled.
+  - Multi-font / named-font support — when there&rsquo;s a reason for it. The current 1:1 schema is fine for the personal-handwriting case.
+  - Sharing / publication — explicit opt-in surface if a marketplace ever lands.
+
+---
+
+## 2026-05-25 — Split font generation from file download
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** Auto-triggering a browser save as the terminal step of Generate Font conflated two distinct ideas — *producing the artefact* and *acting on it*. The success state was a single sentence acknowledging a download that already happened, leaving nowhere to add the other things a freshly-compiled font should let you do: re-download on demand, embed it for use across the browser, copy an embed snippet, save it to an account.
+
+**Decision**
+
+Generate Font produces the compiled `.otf` and stops. The client receives the bytes as an in-memory `Blob` and stores them in the component&rsquo;s success state alongside the server-supplied filename. A new result panel renders below the form showing the filename and a primary **Download** button; clicking it is what triggers the browser save. The download is now its own client-side concern (`downloadFontFile`) decoupled from the generation request. The `/api/fonts/generate` route is unchanged — it already returns bytes synchronously; the client just stops auto-saving them.
+
+**Rationale**
+
+- **Generation and action are different verbs.** Conflating them meant the only "what next?" the UI offered was the file the OS already saved. Splitting them gives the success state a permanent home for future actions.
+- **Future-proof for in-browser use.** Embedding the font into the active browser (FontFace API + local persistence) and "copy embed snippet" both want the same in-memory `Blob` we now hold. They become incremental additions inside the result panel rather than re-fetches.
+- **Honest UX.** Auto-downloads can feel coercive — the user clicked Generate, not Save. Asking explicitly to download respects that distinction and matches how users expect previewable artefacts to behave.
+- **Endpoint untouched.** The synchronous compile decision (see 2026-05-22 entry) still holds. No persistence, no second round-trip — just a different terminal action on the bytes that were already in hand.
+
+**UX implications**
+
+The four-state Generate Font UX (`submitting` → `slow` → `success` / `error`) becomes five-step in effect: the success state is now interactive, not a notification. The result panel uses the existing `Alert` atom (success variant) with the filename in a monospace span and a Download button. The confirm dialog copy drops "and download it to your computer" — the dialog now promises compilation only, with download offered when the file is ready.
+
+The result panel is deliberately the docking point for forthcoming actions (embed on this browser, copy embed snippet, save to account once auth gains a fonts table). Each lands as a new button next to Download without further restructuring.
+
+**Impact**
+
+- **Modified:** `src/lib/apiClient.ts` — `requestFontGeneration` returns `{ blob, filename }` instead of triggering a download; new exported `downloadFontFile(blob, filename)` helper.
+- **Modified:** `src/components/compose/GenerateFontSection.tsx` — success state now carries the `Blob`; result panel renders an `Alert` with a Download button; confirm dialog copy updated.
+- **Unchanged:** `src/app/api/fonts/generate/route.ts` — the response shape (font bytes + `Content-Disposition`) is already correct; the client decides when to consume it.
+- **Open follow-ups (deliberately not in this change):** embed-on-this-browser action (FontFace + IndexedDB persistence), copy embed snippet, save-to-account once font persistence lands for signed-in users.
+
+---
+
 ## 2026-05-22 — Auto-compose diacritics from accent primitives
 
 **Status:** Accepted (Phase 1a — procedural composition only)

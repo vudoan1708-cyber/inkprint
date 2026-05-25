@@ -1,13 +1,19 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { LogIn } from 'lucide-react';
+import { Check, Cloud, Download, LogIn } from 'lucide-react';
+import { Alert } from '@/components/ui/Alert';
 import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Input } from '@/components/ui/Input';
-import { requestFontGeneration } from '@/lib/apiClient';
+import { downloadFontFile, requestFontEmbed, requestFontGeneration } from '@/lib/apiClient';
 import { createSupabaseBrowserClient } from '@/lib/supabase/browser';
 import { useAuth } from '@/lib/useAuth';
+import { toast } from '@/components/ui/Toaster';
+
+// TODO: replace with the live install URL once the Inkwell extension ships.
+const INKWELL_EXTENSION_URL = '#';
+const EMBED_TOAST_DURATION_MS = 10000;
 
 type Props = {
   userId: string;
@@ -34,6 +40,12 @@ function computeButtonLabel({
   return 'Generate font';
 }
 
+function embedButtonLabel(state: EmbedState): string {
+  if (state.status === 'embedding') return 'Embedding…';
+  if (state.status === 'embedded') return 'Embedded';
+  return 'Embed';
+}
+
 function validateFamilyName(value: string): string | null {
   if (value.trim().length === 0) return 'Give the font a name.';
   if (value.length > MAX_FAMILY_NAME_LENGTH) return `Name must be ${MAX_FAMILY_NAME_LENGTH} characters or fewer.`;
@@ -45,14 +57,22 @@ type GenerateState =
   | { status: 'idle' }
   | { status: 'submitting' }
   | { status: 'slow' }
-  | { status: 'success'; filename: string }
+  | { status: 'success'; blob: Blob; filename: string; familyName: string }
+  | { status: 'error'; message: string };
+
+type EmbedState =
+  | { status: 'idle' }
+  | { status: 'embedding' }
+  | { status: 'embedded' }
   | { status: 'error'; message: string };
 
 export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
   const [familyName, setFamilyName] = useState('My Handwriting');
   const [state, setState] = useState<GenerateState>({ status: 'idle' });
+  const [embedState, setEmbedState] = useState<EmbedState>({ status: 'idle' });
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  const embedAbortRef = useRef<AbortController | null>(null);
   const slowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hardTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -98,6 +118,7 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
     const controller = new AbortController();
     abortRef.current = controller;
     setState({ status: 'submitting' });
+    setEmbedState({ status: 'idle' });
 
     slowTimerRef.current = setTimeout(() => {
       setState((prev) => (prev.status === 'submitting' ? { status: 'slow' } : prev));
@@ -107,14 +128,15 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
       controller.abort();
     }, HARD_TIMEOUT_MS);
 
+    const submittedName = familyName;
     try {
-      const { filename } = await requestFontGeneration({
+      const { blob, filename } = await requestFontGeneration({
         userId,
-        familyName,
+        familyName: submittedName,
         signal: controller.signal,
       });
       clearTimers();
-      setState({ status: 'success', filename });
+      setState({ status: 'success', blob, filename, familyName: submittedName });
     } catch (error) {
       clearTimers();
       const aborted = controller.signal.aborted;
@@ -128,6 +150,36 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
       });
     } finally {
       abortRef.current = null;
+    }
+  };
+
+  const handleEmbed = async (familyNameToEmbed: string): Promise<void> => {
+    if (embedState.status === 'embedding' || embedState.status === 'embedded') return;
+    const controller = new AbortController();
+    embedAbortRef.current = controller;
+    setEmbedState({ status: 'embedding' });
+    try {
+      await requestFontEmbed({
+        userId,
+        familyName: familyNameToEmbed,
+        signal: controller.signal,
+      });
+      setEmbedState({ status: 'embedded' });
+      toast.success('Font embedded', {
+        description: 'Open Inkwell to apply it everywhere. Don’t have it yet?',
+        duration: EMBED_TOAST_DURATION_MS,
+        action: {
+          label: 'Get Inkwell',
+          onClick: () => window.open(INKWELL_EXTENSION_URL, '_blank', 'noopener,noreferrer'),
+        },
+      });
+    } catch (error) {
+      setEmbedState({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to embed font.',
+      });
+    } finally {
+      embedAbortRef.current = null;
     }
   };
 
@@ -168,9 +220,46 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
         </p>
       ) : null}
       {state.status === 'success' ? (
-        <p role="status" className="basis-full text-sm text-success-600">
-          Font ready. Downloaded <span className="font-mono">{state.filename}</span>.
-        </p>
+        <Alert variant="success" title="Font ready" className="basis-full">
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="min-w-0 flex-1 break-all font-mono">{state.filename}</p>
+            <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                isLoading={embedState.status === 'embedding'}
+                disabled={embedState.status === 'embedding' || embedState.status === 'embedded'}
+                leadingIcon={
+                  embedState.status === 'embedded' ? (
+                    <Check className="size-4" aria-hidden />
+                  ) : (
+                    <Cloud className="size-4" aria-hidden />
+                  )
+                }
+                onClick={() => {
+                  if (state.status === 'success') void handleEmbed(state.familyName);
+                }}
+              >
+                {embedButtonLabel(embedState)}
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="sm"
+                leadingIcon={<Download className="size-4" aria-hidden />}
+                onClick={() => downloadFontFile(state.blob, state.filename)}
+              >
+                Download
+              </Button>
+            </div>
+          </div>
+          {embedState.status === 'error' ? (
+            <p role="alert" className="mt-2 text-sm text-danger-700 dark:text-danger-200">
+              {embedState.message}
+            </p>
+          ) : null}
+        </Alert>
       ) : null}
       {state.status === 'error' ? (
         <p role="alert" className="basis-full text-sm text-danger-600">
@@ -185,7 +274,7 @@ export function GenerateFontSection({ userId, drawnGlyphCount }: Props) {
           <>
             <p>
               We&rsquo;ll compile {drawnGlyphCount} glyph{drawnGlyphCount === 1 ? '' : 's'} into{' '}
-              <span className="font-mono">{familyName}.otf</span> and download it to your computer.
+              <span className="font-mono">{familyName}.otf</span>. You can download it once it&rsquo;s ready.
             </p>
             {isLowCoverage ? (
               <p className="mt-2 text-warn-700">

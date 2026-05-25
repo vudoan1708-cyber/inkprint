@@ -5,10 +5,18 @@ import { z } from 'zod';
 // Next.js build via the `server-only` guard above.
 const schema = z.object({
   SUPABASE_SERVICE_ROLE_KEY: z.string().min(1),
+  CLOUDFLARE_ACCOUNT_ID: z.string().min(1),
+  CLOUDFLARE_ACCESS_KEY: z.string().min(1),
+  CLOUDFLARE_SECRET_KEY: z.string().min(1),
+  CLOUDFLARE_BUCKET_NAME: z.string().min(1),
 });
 
 const parsed = schema.safeParse({
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  CLOUDFLARE_ACCOUNT_ID: process.env.CLOUDFLARE_ACCOUNT_ID,
+  CLOUDFLARE_ACCESS_KEY: process.env.CLOUDFLARE_ACCESS_KEY,
+  CLOUDFLARE_SECRET_KEY: process.env.CLOUDFLARE_SECRET_KEY,
+  CLOUDFLARE_BUCKET_NAME: process.env.CLOUDFLARE_BUCKET_NAME,
 });
 
 if (!parsed.success) {

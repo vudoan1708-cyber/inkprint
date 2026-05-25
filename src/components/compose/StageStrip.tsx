@@ -28,7 +28,7 @@ export function StageStrip({ drawnCount, totalCount, onStageClick }: Props) {
 
   useEffect(() => {
     const handleScroll = (): void => {
-      const activationY = 120;
+      const activationY = 165;
       const stages = ['draft', 'test', 'print'] as Stage[];
       let next: Stage = 'draft';
       for (const stage of stages) {

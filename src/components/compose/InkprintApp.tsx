@@ -345,7 +345,7 @@ export function InkprintApp() {
       <section
         id={STAGE_SECTION_IDS.draft}
         aria-labelledby="draft-heading"
-        className="flex scroll-mt-24 flex-col gap-6"
+        className="flex scroll-mt-36 flex-col gap-6"
       >
         <div>
           <h2
@@ -457,7 +457,7 @@ export function InkprintApp() {
       <section
         id={STAGE_SECTION_IDS.test}
         aria-labelledby="test-heading"
-        className="flex scroll-mt-24 flex-col gap-4"
+        className="flex scroll-mt-40 flex-col gap-4"
       >
         <div>
           <h2
@@ -495,7 +495,7 @@ export function InkprintApp() {
       <section
         id={STAGE_SECTION_IDS.print}
         aria-labelledby="print-heading"
-        className="flex scroll-mt-24 flex-col gap-4"
+        className="flex scroll-mt-40 flex-col gap-4"
       >
         <div>
           <h2

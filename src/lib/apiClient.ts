@@ -8,11 +8,16 @@ export async function parseEnvelope<T>(res: Response): Promise<T> {
   return body.data;
 }
 
-export async function postEnvelope<T>(url: string, body: unknown): Promise<T> {
+export async function postEnvelope<T>(
+  url: string,
+  body: unknown,
+  options?: { signal?: AbortSignal },
+): Promise<T> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
+    signal: options?.signal,
   });
   return parseEnvelope<T>(res);
 }
@@ -21,7 +26,7 @@ export async function requestFontGeneration(input: {
   userId: string;
   familyName: string;
   signal?: AbortSignal;
-}): Promise<{ filename: string }> {
+}): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch('/api/fonts/generate', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -37,17 +42,22 @@ export async function requestFontGeneration(input: {
 
   const blob = await res.blob();
   const filename = parseAttachmentFilename(res.headers.get('content-disposition')) ?? `${input.familyName}.otf`;
-  triggerDownload(blob, filename);
-  return { filename };
+  return { blob, filename };
 }
 
-function parseAttachmentFilename(headerValue: string | null): string | null {
-  if (!headerValue) return null;
-  const match = headerValue.match(/filename="([^"]+)"/);
-  return match?.[1] ?? null;
+export async function requestFontEmbed(input: {
+  userId: string;
+  familyName: string;
+  signal?: AbortSignal;
+}): Promise<{ familyName: string; glyphCount: number; lastCompiledAt: string }> {
+  return postEnvelope(
+    '/api/fonts/embed',
+    { userId: input.userId, familyName: input.familyName },
+    { signal: input.signal },
+  );
 }
 
-function triggerDownload(blob: Blob, filename: string): void {
+export function downloadFontFile(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
@@ -56,4 +66,10 @@ function triggerDownload(blob: Blob, filename: string): void {
   anchor.click();
   document.body.removeChild(anchor);
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function parseAttachmentFilename(headerValue: string | null): string | null {
+  if (!headerValue) return null;
+  const match = headerValue.match(/filename="([^"]+)"/);
+  return match?.[1] ?? null;
 }
