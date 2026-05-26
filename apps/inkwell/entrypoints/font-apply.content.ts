@@ -5,6 +5,7 @@ const STYLE_ID = 'inkwell-applied-font';
 export default defineContentScript({
   matches: ['<all_urls>'],
   runAt: 'document_start',
+  allFrames: true,
   async main() {
     // On every page load: read the current applied-font state and inject if set.
     // SPA navigations don't re-run content scripts, so we also observe history
@@ -63,7 +64,7 @@ function buildFontCss(applied: AppliedFont, fontSize: number): string {
       font-family: ${family};
       src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
     }
-    *, *::before, *::after {
+    *:not([class*="icon"]):not([class*="symbol"]):not([class*="fa-"]):not([class*="glyphicon"]) {
       font-family: ${family} !important;
       ${sizeRule}
     }

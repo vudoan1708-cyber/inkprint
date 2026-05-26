@@ -1,6 +1,6 @@
 {
   "name": "@inkprint/inkwell",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "description": "Inkwell — applies the user's InkPrint handwriting font across the web.",
   "type": "module",
