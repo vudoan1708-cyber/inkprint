@@ -44,12 +44,15 @@ async function applyFromStorage(): Promise<void> {
 
 function injectFont(applied: AppliedFont, fontSize: number): void {
   removeFont();
+  const css = buildFontCss(applied, fontSize);
   const style = document.createElement('style');
   style.id = STYLE_ID;
-  style.textContent = buildFontCss(applied, fontSize);
+  style.textContent = css;
   // documentElement, not body — content scripts at document_start run before
   // <body> exists. Appending to <html> avoids "null parent" errors.
   document.documentElement.appendChild(style);
+  // Mirror into every shadow root via the MAIN-world helper.
+  window.dispatchEvent(new CustomEvent('inkwell:set-css', { detail: { css } }));
 }
 
 function buildFontCss(applied: AppliedFont, fontSize: number): string {
@@ -69,6 +72,7 @@ function buildFontCss(applied: AppliedFont, fontSize: number): string {
 
 function removeFont(): void {
   document.getElementById(STYLE_ID)?.remove();
+  window.dispatchEvent(new CustomEvent('inkwell:clear-css'));
 }
 
 function observeSpaNavigations(onChange: () => void): void {
