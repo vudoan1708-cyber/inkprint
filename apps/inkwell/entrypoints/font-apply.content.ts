@@ -58,15 +58,15 @@ function injectFont(applied: AppliedFont, fontSize: number): void {
 
 function buildFontCss(applied: AppliedFont, fontSize: number): string {
   const family = JSON.stringify(applied.familyName);
-  const sizeRule = fontSize === 100 ? '' : `font-size: ${fontSize}% !important;`;
+  const zoomRule = fontSize === 100 ? '' : `html { zoom: ${fontSize / 100}; }`;
   return `
     @font-face {
       font-family: ${family};
       src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
     }
+    ${zoomRule}
     *:not([class*="icon"]):not([class*="symbol"]):not([class*="fa-"]):not([class*="glyphicon"]) {
       font-family: ${family} !important;
-      ${sizeRule}
     }
   `;
 }
