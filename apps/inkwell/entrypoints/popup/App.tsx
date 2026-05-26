@@ -60,6 +60,7 @@ function SignInView() {
 
 function SignedInView({ session }: { session: SessionRecord }) {
   const fontSize = useStorageItem(fontSizeItem) ?? 100;
+  const cachedFont = useStorageItem(cachedFontItem);
   const [appliedFamily, setAppliedFamily] = useState<string | null | undefined>(undefined);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -102,6 +103,7 @@ function SignedInView({ session }: { session: SessionRecord }) {
   };
 
   const isApplied = appliedFamily !== null && appliedFamily !== undefined;
+  const displayName = appliedFamily ?? cachedFont?.familyName ?? 'No font yet';
 
   return (
     <main className="flex w-80 flex-col gap-3 p-4">
@@ -116,7 +118,7 @@ function SignedInView({ session }: { session: SessionRecord }) {
 
       <section className="flex flex-col gap-1 rounded-2xl border border-surface-200 px-3.5 py-3 dark:border-surface-700">
         <div className="text-sm font-semibold text-surface-900 dark:text-surface-50">
-          My Handwriting
+          {displayName}
         </div>
         <div className="text-xs text-surface-500 dark:text-surface-400">
           {isApplied ? 'Applied to every open tab' : 'Your embedded handwriting font, applied across every tab.'}
