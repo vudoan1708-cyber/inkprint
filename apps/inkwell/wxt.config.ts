@@ -28,5 +28,13 @@ export default defineConfig({
     action: {
       default_title: 'Inkwell',
     },
+    browser_specific_settings: {
+      gecko: {
+        id: 'inkwell@inkprint.com',
+        data_collection_permissions: {
+          required: ['none'],
+        },
+      },
+    },
   },
 });
