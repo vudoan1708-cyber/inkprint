@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Slider } from '@inkprint/ui';
 import type { WxtStorageItem } from 'wxt/utils/storage';
 import type { ExtensionMessage, ExtensionResponse } from '@/lib/messages';
@@ -64,6 +64,24 @@ function SignedInView({ session }: { session: SessionRecord }) {
   const [appliedFamily, setAppliedFamily] = useState<string | null | undefined>(undefined);
   const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftFontSize, setDraftFontSize] = useState<number | null>(null);
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const displayFontSize = draftFontSize ?? fontSize;
+
+  useEffect(() => {
+    return () => {
+      if (commitTimerRef.current !== null) clearTimeout(commitTimerRef.current);
+    };
+  }, []);
+
+  const handleFontSizeChange = (next: number): void => {
+    setDraftFontSize(next);
+    if (commitTimerRef.current !== null) clearTimeout(commitTimerRef.current);
+    commitTimerRef.current = setTimeout(() => {
+      void fontSizeItem.setValue(next).then(() => setDraftFontSize(null));
+      commitTimerRef.current = null;
+    }, 200);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -142,9 +160,9 @@ function SignedInView({ session }: { session: SessionRecord }) {
             min={50}
             max={400}
             step={5}
-            value={fontSize}
+            value={displayFontSize}
             valueSuffix="%"
-            onChange={(next) => void fontSizeItem.setValue(next)}
+            onChange={handleFontSizeChange}
           />
           <p className="text-xs text-surface-500 dark:text-surface-400">
             Don&rsquo;t see the font on a page? Refresh that tab.

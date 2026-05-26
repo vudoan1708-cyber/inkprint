@@ -37,34 +37,34 @@ async function applyFromStorage(): Promise<void> {
       removeFont();
       return;
     }
-    injectFont(applied, fontSize);
+    injectFont(applied);
+    window.dispatchEvent(
+      new CustomEvent('inkwell:set-font-size', { detail: { factor: fontSize / 100 } }),
+    );
   } catch {
     // Context was invalidated mid-call (extension reload). Stop quietly.
   }
 }
 
-function injectFont(applied: AppliedFont, fontSize: number): void {
-  removeFont();
-  const css = buildFontCss(applied, fontSize);
+function injectFont(applied: AppliedFont): void {
+  removeFontStyle();
+  const css = buildFontCss(applied);
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = css;
   // documentElement, not body — content scripts at document_start run before
   // <body> exists. Appending to <html> avoids "null parent" errors.
   document.documentElement.appendChild(style);
-  // Mirror into every shadow root via the MAIN-world helper.
   window.dispatchEvent(new CustomEvent('inkwell:set-css', { detail: { css } }));
 }
 
-function buildFontCss(applied: AppliedFont, fontSize: number): string {
+function buildFontCss(applied: AppliedFont): string {
   const family = JSON.stringify(applied.familyName);
-  const zoomRule = fontSize === 100 ? '' : `html { zoom: ${fontSize / 100}; }`;
   return `
     @font-face {
       font-family: ${family};
       src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
     }
-    ${zoomRule}
     *:not([class*="icon"]):not([class*="symbol"]):not([class*="fa-"]):not([class*="glyphicon"]) {
       font-family: ${family} !important;
     }
@@ -72,8 +72,12 @@ function buildFontCss(applied: AppliedFont, fontSize: number): string {
 }
 
 function removeFont(): void {
-  document.getElementById(STYLE_ID)?.remove();
+  removeFontStyle();
   window.dispatchEvent(new CustomEvent('inkwell:clear-css'));
+}
+
+function removeFontStyle(): void {
+  document.getElementById(STYLE_ID)?.remove();
 }
 
 function observeSpaNavigations(onChange: () => void): void {
