@@ -6,6 +6,96 @@ Pure implementation work (writing a route, adding a column, fixing a bug) does *
 
 ---
 
+## 2026-05-26 — Inkwell reach map: DOM / shadow / iframe coverage, the canvas + mobile ceilings, Pillar 2 reframe
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** With `GET /api/fonts/me` live, the scaffolded extension (2026-05-25) needed its real font-injection logic. Building it forced the question of *where* a handwriting font can actually be applied; a parallel line of questioning about mobile install paths exposed that the product's reach on phones is far narrower than "everywhere." Both belong on the record before Pillar 2 (mobile keyboard) is ever scheduled.
+
+**Context**
+
+A font override injected as a document `<style>` only reaches light-DOM text. Modern sites hide large amounts of text behind two boundaries the cascade doesn't cross — shadow roots (web components) and iframes (cross-origin, `about:blank`, `srcdoc`). The hardest surfaces — design tools like Figma — don't use the browser's font engine at all; they ship their own (Skia / HarfBuzz compiled to WASM) and draw glyphs as GPU textures, so there is no `font-family` for us to override. Separately, "can my font show on my phone?" has a much worse answer than desktop, and earlier framing hadn't scoped that.
+
+**Decision**
+
+Coverage, in layers:
+
+1. **Light DOM** — isolated content script injects `@font-face` + a universal `font-family` override at `document_start`, re-applying on SPA navigations.
+2. **Shadow DOM (open + closed)** — a second script in the `MAIN` world monkey-patches `Element.prototype.attachShadow`, capturing every shadow root (closed ones included — their reference is otherwise unreachable) and styling each. Pre-existing open roots are caught by a one-time walk.
+3. **Iframes** — both scripts run `allFrames: true` so each frame self-applies; the MAIN script also walks same-origin `about:blank`/`srcdoc` frames via `contentWindow`, which don't trigger content-script injection.
+4. **Icon fonts exempted** — the universal selector skips pseudo-elements and icon-font class patterns (`icon`, `symbol`, `fa-`, `glyphicon`) so Material Icons / FontAwesome ligatures keep rendering as glyphs, not literal label text.
+5. **Acknowledged ceilings (won't-fix, platform-impossible):** closed shadow roots created before our script runs; any WASM/WebGL canvas renderer (Figma, FigJam, Miro, Excalidraw, tldraw, Flutter/Unity web); sandboxed iframes without `allow-scripts`.
+
+**Mobile reach — the honest map (positioning decision)**
+
+- **Browsers:** desktop Chrome/Firefox/Edge/Safari ✓ via the extension; **Firefox for Android** ✓; **Chrome mobile and Samsung Internet** ✗ — neither supports general extensions.
+- **OS-level font:** **Samsung** (FlipFont / zFont, using the existing OTF) replaces the system font for system-font-respecting apps; **iOS** only adds fonts to a pool usable inside font-picker apps (Pages/Word), never system-wide or in Safari; **stock Android** needs root.
+- **The wall that matters:** apps that bundle their own font — Facebook, Messenger, Instagram, most modern branded apps — ignore the system font entirely. No method (extension or OS install) reaches native app text on mobile.
+
+**Pillar 2 reframe.** The vision's "mobile keyboard so you type in your handwriting in WhatsApp/IG DMs" rests on a false premise: a keyboard emits *characters*, which the receiving app renders in *its* font — so a keyboard can't put handwriting into Instagram any more than the extension can. The only mechanism that works is inserting the handwriting **as an image/sticker** (Bitmoji-style), which routes through the existing "SVG sticker packs" and "public render API" ideas. Pillar 2, if pursued, is a sticker / render-image feature, not font substitution.
+
+**Rationale**
+
+- Patching `attachShadow` in the MAIN world is the only way to reach closed shadow roots; the isolated world has a separate prototype the page never calls. The capture is unprivileged — we intercept the return value, we don't expose it.
+- `allFrames` covers navigable iframes for free; the same-origin walk is the only path to `about:blank`/`srcdoc`. Cross-origin frames self-handle via their own injected scripts.
+- Recording the ceilings stops future re-litigation: "make it work in Figma" and "make it work in the Instagram app" are platform-impossible, not backlog.
+
+**UX implications**
+
+The font reaches essentially all *browser-rendered* text on desktop and Firefox Android — including web components and embedded frames that naive injection misses. The desktop-strong / mobile-weak split is now explicit: the reach story is "every web page you read, plus your desktop apps via OS install," not "everywhere on every device."
+
+**Impact**
+
+- **Added:** `apps/inkwell/entrypoints/font-apply.content.ts` (isolated, all-frames injection + font-size dispatch); `entrypoints/font-apply-shadow.content.ts` (MAIN-world shadow/iframe coverage).
+- **Added:** `apps/inkwell/README.md` (store-reviewer build/test/permissions doc); `browser_specific_settings.gecko` (`id` + `data_collection_permissions: ["none"]`) in `wxt.config.ts` for Firefox submission.
+- **Removed:** cursive-fallback mode — briefly offered as a toggle, then cut. A system-cursive fallback isn't "your handwriting," so it diluted the product without adding reach.
+- **Reconciliation — prior "deferred" follow-ups that are actually done (the log had drifted):**
+  - Uppercase diacritics (deferred 2026-05-22) — **done**; full uppercase recipe set in `glyphComposition.ts`.
+  - "Recompose composed glyphs after a primitive is tweaked" (deferred 2026-05-22) — **done**; `handleSaveGlyph` recomposes every dependent (composed *and* post-edit-drawn) via a new transitive `DEPENDENTS_OF` map.
+  - `GET /api/fonts/me` (deferred 2026-05-25, Embed entry) — **done**; the extension's bridge consumes it.
+
+**Open follow-ups**
+
+- Source-archive prep so `apps/inkwell` builds standalone for AMO review (vendors `@inkprint/ui`).
+- Store submissions (Chrome, Firefox, Edge), then flip `NEXT_PUBLIC_INKWELL_INSTALL_URL`.
+- Pillar 2, if scheduled, scoped as sticker / render-image insertion — not font substitution.
+
+---
+
+## 2026-05-26 — Font-size control via page zoom, not per-element scaling
+
+**Status:** Accepted
+**Owner:** Vu Doan
+**Trigger:** The popup gained a font-size slider. A flat `font-size: N% !important` on the universal selector flattened the page's type hierarchy — every element became the same N% of its parent, so h3 stopped being larger than body text.
+
+**Context**
+
+Three ways to scale text across an arbitrary page: (a) flat `font-size` percentage on `*` — breaks hierarchy; (b) per-element JS that reads each element's computed size and multiplies it — preserves hierarchy and touches text only, but needs a full element walk (plus every shadow root and iframe), a `MutationObserver` for new nodes, and a WeakMap of originals; (c) CSS `zoom` on `<html>` — preserves hierarchy in one declaration but scales the whole rendered page (text, images, spacing).
+
+(b) was built and worked, but felt abrupt on large pages, and `zoom`'s layout-affecting behaviour turned out to be acceptable for this control.
+
+**Decision**
+
+Scale page text with `html { zoom: <factor> }`, emitted into the injected stylesheet (and mirrored into shadow roots / same-origin frames) only when the slider is off its 100% default. Slider commits are debounced (~200 ms) so a drag triggers one re-render, not one per tick.
+
+**Rationale**
+
+- `zoom` preserves the page's type hierarchy by construction (16px→24px and 24px→36px each scale by their own ratio) — exactly the "h3 stays bigger" requirement.
+- Per-element JS scaling is heavier (full-tree walk + observers across every frame and shadow root) and its discrete rewrites read as abrupt. One CSS line is cheaper and smoother.
+- `zoom` is standardized (CSSWG) and supported in all current browsers incl. Firefox 126+.
+
+**UX implications**
+
+- Trade-off accepted: `zoom` also scales images and spacing, and at high values can shift absolutely-positioned elements. Acceptable for a "make the page bigger in my handwriting" control; a future text-only mode could revisit (b) with batched writes if users ask.
+- Text quality holds at high zoom (vector outlines re-rasterize); only raster images soften.
+
+**Impact**
+
+- **Modified:** `apps/inkwell/entrypoints/font-apply.content.ts` — `buildFontCss` emits the `zoom` rule; popup slider commits debounced.
+- Slider value persists in `browser.storage.local` and applies across all tabs via the existing broadcast.
+
+---
+
 ## 2026-05-25 — Rename "Embed" → "Sync to Inkwell"; presence-aware install CTA
 
 **Status:** Accepted

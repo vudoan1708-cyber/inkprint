@@ -30,6 +30,14 @@ const tilde: Stroke[] = [[point(430, 400), point(470, 360), point(530, 400), poi
 const hookAbove: Stroke[] = [[point(490, 360), point(490, 410), point(520, 420)]];
 const dotBelow: Stroke[] = [[point(495, 400), point(505, 400)]];
 const horn: Stroke[] = [[point(480, 400), point(520, 380), point(540, 410)]];
+const bar: Stroke[] = [[point(400, 500), point(620, 500)]];
+const comma: Stroke[] = [[point(480, 720), point(500, 760), point(470, 820)]];
+const period: Stroke[] = [[point(490, 740), point(520, 740), point(520, 770), point(490, 770)]];
+
+const dBase: Stroke[] = [
+  [point(560, 300), point(560, 720)],                                          // ascender stem (right)
+  [point(540, 540), point(440, 500), point(420, 620), point(520, 700), point(560, 660)], // bowl (left)
+];
 
 const HOOK_CP = 0xe000;
 const DOT_CP = 0xe001;
@@ -92,6 +100,68 @@ describe('composeGlyph — single mark', () => {
   });
 });
 
+describe('composeGlyph — đ/Đ crossbar', () => {
+  it('places the đ bar above-centre and toward the right stem', () => {
+    const result = composeGlyph(0x0111, makeLookup({ 0x64: dBase, 0x2d: bar }));
+    if (!result.ok) throw new Error('đ should compose');
+    const barBox = strokesBoundingBox(result.strokes.slice(dBase.length));
+    const baseBox = strokesBoundingBox(dBase);
+    if (!barBox || !baseBox) throw new Error('unreachable');
+    const barCx = (barBox.minX + barBox.maxX) / 2;
+    const barCy = (barBox.minY + barBox.maxY) / 2;
+    expect(barCx).toBeGreaterThan((baseBox.minX + baseBox.maxX) / 2); // right of centre
+    expect(barCy).toBeLessThan((baseBox.minY + baseBox.maxY) / 2);    // upper half
+  });
+
+  it('places the Đ bar mid-height and toward the left stem', () => {
+    const result = composeGlyph(0x0110, makeLookup({ 0x44: dBase, 0x2d: bar }));
+    if (!result.ok) throw new Error('Đ should compose');
+    const barBox = strokesBoundingBox(result.strokes.slice(dBase.length));
+    const baseBox = strokesBoundingBox(dBase);
+    if (!barBox || !baseBox) throw new Error('unreachable');
+    const barCx = (barBox.minX + barBox.maxX) / 2;
+    const barCy = (barBox.minY + barBox.maxY) / 2;
+    expect(barCx).toBeLessThan((baseBox.minX + baseBox.maxX) / 2);     // left of centre
+    expect(barCy).toBeCloseTo((baseBox.minY + baseBox.maxY) / 2, 0);   // mid-height
+  });
+});
+
+describe('composeGlyph — derived punctuation', () => {
+  it('lifts the apostrophe above the comma it derives from', () => {
+    const result = composeGlyph(0x27, makeLookup({ 0x2c: comma }));
+    if (!result.ok) throw new Error("' should compose");
+    const apos = strokesBoundingBox(result.strokes)!;
+    const src = strokesBoundingBox(comma)!;
+    expect(apos.minY).toBeLessThan(src.minY); // moved up to quote height
+  });
+
+  it('builds a double quote from two single marks', () => {
+    const single = composeGlyph(0x27, makeLookup({ 0x2c: comma }));
+    const double = composeGlyph(0x22, makeLookup({ 0x2c: comma }));
+    if (!single.ok || !double.ok) throw new Error('quotes should compose');
+    expect(double.strokes.length).toBe(single.strokes.length * 2);
+  });
+
+  it('repeats the period three times for the ellipsis', () => {
+    const result = composeGlyph(0x2026, makeLookup({ 0x2e: period }));
+    if (!result.ok) throw new Error('… should compose');
+    expect(result.strokes.length).toBe(period.length * 3);
+  });
+
+  it('makes the em dash wider than the en dash', () => {
+    const en = composeGlyph(0x2013, makeLookup({ 0x2d: bar }));
+    const em = composeGlyph(0x2014, makeLookup({ 0x2d: bar }));
+    if (!en.ok || !em.ok) throw new Error('dashes should compose');
+    const enBox = strokesBoundingBox(en.strokes)!;
+    const emBox = strokesBoundingBox(em.strokes)!;
+    expect(emBox.maxX - emBox.minX).toBeGreaterThan(enBox.maxX - enBox.minX);
+  });
+
+  it('reports the source glyph as missing when absent', () => {
+    expect(composeGlyph(0x27, makeLookup({}))).toEqual({ ok: false, missing: [0x2c] });
+  });
+});
+
 describe('composeGlyph — tittle handling on i', () => {
   it('drops the tittle when stacking an above-mark', () => {
     const result = composeGlyph(0x00ed, makeLookup({ 0x69: baseI, 0x00b4: acute }));
@@ -148,11 +218,12 @@ describe('composeAll', () => {
     const drawn = new Map<number, Stroke[]>([
       // lowercase bases
       [0x61, baseO], [0x65, baseO], [0x69, baseI], [0x6e, baseO],
-      [0x6f, baseO], [0x75, baseU], [0x79, baseI],
+      [0x6f, baseO], [0x75, baseU], [0x79, baseI], [0x64, dBase],
       // uppercase bases
       [0x41, baseO], [0x45, baseO], [0x49, baseO], [0x4e, baseO],
-      [0x4f, baseO], [0x55, baseU], [0x59, baseO],
-      // primitives
+      [0x4f, baseO], [0x55, baseU], [0x59, baseO], [0x44, dBase],
+      // primitives + punctuation sources
+      [0x2d, bar], [0x2c, comma], [0x2e, period],
       [0x00b4, acute],
       [0x0060, grave],
       [0x02c6, circumflex],
@@ -202,6 +273,7 @@ describe('COMPOSABLE_TARGETS', () => {
     const idx = new Map<number, number>(COMPOSABLE_TARGETS.map((cp, i) => [cp, i]));
     for (const target of COMPOSABLE_TARGETS) {
       const recipe = COMPOSITION_RECIPES[target]!;
+      if (!('base' in recipe)) continue; // derived punctuation has no base
       const baseIdx = idx.get(recipe.base);
       if (baseIdx === undefined) continue; // base is a primitive letter, not a target
       expect(baseIdx).toBeLessThan(idx.get(target)!);

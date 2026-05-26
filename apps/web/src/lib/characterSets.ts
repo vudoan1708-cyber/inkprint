@@ -7,8 +7,8 @@ const range = (start: number, end: number): number[] => {
 };
 
 const LATIN_BASIC_CODE_POINTS: readonly number[] = [
-  ...range(0x41, 0x5a), // A-Z
-  ...range(0x61, 0x7a), // a-z
+  ...range(0x41, 0x44), 0x0110, ...range(0x45, 0x5a), // A-D, Đ, E-Z
+  ...range(0x61, 0x64), 0x0111, ...range(0x65, 0x7a), // a-d, đ, e-z
   ...range(0x30, 0x39), // 0-9
   0x2e, // .
   0x2c, // ,
@@ -179,6 +179,16 @@ const LATIN_EXTENDED_TARGET_CODE_POINTS: readonly number[] = [
   0x00d1,                                 // Ñ
 ] as const;
 
+// Punctuation derived by transforming a drawn glyph: comma → quotes, period →
+// ellipsis, hyphen → dashes. Auto-composed, never drawn.
+const PUNCTUATION_TARGET_CODE_POINTS: readonly number[] = [
+  0x0027, // '
+  0x0022, // "
+  0x2026, // …
+  0x2013, // –
+  0x2014, // —
+] as const;
+
 export type CharacterSet = {
   readonly key: string;
   readonly label: string;
@@ -191,11 +201,13 @@ export const CHARACTER_SETS = {
   'latin-extended': {
     key: 'latin-extended',
     label: 'Inkprint Standard',
-    description: 'Basic Latin + 9 accent marks + ~75 auto-composed diacritic letters.',
+    description:
+      'Basic Latin + 9 accent marks + ~77 auto-composed diacritic letters + derived quotes, dashes & ellipsis.',
     codePoints: [
       ...LATIN_BASIC_CODE_POINTS,
       ...ACCENT_PRIMITIVE_CODE_POINTS,
       ...LATIN_EXTENDED_TARGET_CODE_POINTS,
+      ...PUNCTUATION_TARGET_CODE_POINTS,
     ],
     suggestedColumns: 8,
   },
