@@ -96,20 +96,12 @@ async function writeSession(next: SessionRecord | null): Promise<void> {
   await sessionItem.setValue(next);
 }
 
-// Best-effort: SameSite-Lax cookies don't always travel in MV3 SW fetches.
-// The bridge content script is the authoritative path; this is just a hint.
 async function refreshSession(): Promise<void> {
   if (await signedOutItem.getValue()) return;
   let res: Response;
   try {
     res = await fetch(`${WEB_APP_URL}/api/me`, { credentials: 'include' });
-  } catch (err) {
-    console.error('[Inkwell] refreshSession fetch error:', err);
-    return;
-  }
-
-  if (res.status === 401) {
-    await writeSession(null);
+  } catch {
     return;
   }
   if (!res.ok) return;

@@ -15,7 +15,6 @@ const STRIKE_UPPER_Y = 0.2;       // đ: bar centre below the ascender top
 // Derived-punctuation placement (comma → quotes, period → ellipsis, hyphen → dashes).
 const QUOTE_TOP_Y = GLYPH_UPM * 0.1;  // quotes hang near cap height (y-down space)
 const QUOTE_PAIR_GAP_RATIO = 0.4;     // gap between paired quote marks, × mark width
-const ELLIPSIS_GAP_RATIO = 1.0;       // gap between ellipsis dots, × dot width
 const EN_DASH_WIDTH = GLYPH_UPM * 0.5;
 const EM_DASH_WIDTH = GLYPH_UPM * 0.8;
 
@@ -256,12 +255,11 @@ const RECIPES: Readonly<Record<number, ComposeRecipe>> = (() => {
     // D-stroke
     0x0110: { base: 0x44, marks: [BAR_MARK] },               // Đ
 
-    // ── derived punctuation (comma → quotes, period → …, hyphen → dashes) ──
-    0x0027: { from: 0x2c, build: singleQuote },                                  // '
-    0x0022: { from: 0x2c, build: doubleQuote },                                  // "
-    0x2026: { from: 0x2e, build: (s) => repeatRight(s, 3, ELLIPSIS_GAP_RATIO) }, // …
-    0x2013: { from: 0x2d, build: (s) => scaleXAround(s, EN_DASH_WIDTH) },        // –
-    0x2014: { from: 0x2d, build: (s) => scaleXAround(s, EM_DASH_WIDTH) },        // —
+    // ── derived punctuation (comma → quotes, hyphen → dashes) ──
+    0x0027: { from: 0x2c, build: singleQuote },                           // '
+    0x0022: { from: 0x2c, build: doubleQuote },                           // "
+    0x2013: { from: 0x2d, build: (s) => scaleXAround(s, EN_DASH_WIDTH) }, // –
+    0x2014: { from: 0x2d, build: (s) => scaleXAround(s, EM_DASH_WIDTH) }, // —
   };
 })();
 

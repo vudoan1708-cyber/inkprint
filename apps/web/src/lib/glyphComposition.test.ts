@@ -32,7 +32,6 @@ const dotBelow: Stroke[] = [[point(495, 400), point(505, 400)]];
 const horn: Stroke[] = [[point(480, 400), point(520, 380), point(540, 410)]];
 const bar: Stroke[] = [[point(400, 500), point(620, 500)]];
 const comma: Stroke[] = [[point(480, 720), point(500, 760), point(470, 820)]];
-const period: Stroke[] = [[point(490, 740), point(520, 740), point(520, 770), point(490, 770)]];
 
 const dBase: Stroke[] = [
   [point(560, 300), point(560, 720)],                                          // ascender stem (right)
@@ -142,12 +141,6 @@ describe('composeGlyph — derived punctuation', () => {
     expect(double.strokes.length).toBe(single.strokes.length * 2);
   });
 
-  it('repeats the period three times for the ellipsis', () => {
-    const result = composeGlyph(0x2026, makeLookup({ 0x2e: period }));
-    if (!result.ok) throw new Error('… should compose');
-    expect(result.strokes.length).toBe(period.length * 3);
-  });
-
   it('makes the em dash wider than the en dash', () => {
     const en = composeGlyph(0x2013, makeLookup({ 0x2d: bar }));
     const em = composeGlyph(0x2014, makeLookup({ 0x2d: bar }));
@@ -223,7 +216,7 @@ describe('composeAll', () => {
       [0x41, baseO], [0x45, baseO], [0x49, baseO], [0x4e, baseO],
       [0x4f, baseO], [0x55, baseU], [0x59, baseO], [0x44, dBase],
       // primitives + punctuation sources
-      [0x2d, bar], [0x2c, comma], [0x2e, period],
+      [0x2d, bar], [0x2c, comma],
       [0x00b4, acute],
       [0x0060, grave],
       [0x02c6, circumflex],
