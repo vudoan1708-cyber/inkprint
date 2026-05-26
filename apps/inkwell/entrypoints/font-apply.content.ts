@@ -37,18 +37,15 @@ async function applyFromStorage(): Promise<void> {
       removeFont();
       return;
     }
-    injectFont(applied);
-    window.dispatchEvent(
-      new CustomEvent('inkwell:set-font-size', { detail: { factor: fontSize / 100 } }),
-    );
+    injectFont(applied, fontSize);
   } catch {
     // Context was invalidated mid-call (extension reload). Stop quietly.
   }
 }
 
-function injectFont(applied: AppliedFont): void {
+function injectFont(applied: AppliedFont, fontSize: number): void {
   removeFontStyle();
-  const css = buildFontCss(applied);
+  const css = buildFontCss(applied, fontSize);
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = css;
@@ -58,13 +55,15 @@ function injectFont(applied: AppliedFont): void {
   window.dispatchEvent(new CustomEvent('inkwell:set-css', { detail: { css } }));
 }
 
-function buildFontCss(applied: AppliedFont): string {
+function buildFontCss(applied: AppliedFont, fontSize: number): string {
   const family = JSON.stringify(applied.familyName);
+  const zoomRule = fontSize === 100 ? '' : `html { zoom: ${fontSize / 100}; }`;
   return `
     @font-face {
       font-family: ${family};
       src: url("data:font/otf;base64,${applied.bytesBase64}") format("opentype");
     }
+    ${zoomRule}
     *:not([class*="icon"]):not([class*="symbol"]):not([class*="fa-"]):not([class*="glyphicon"]) {
       font-family: ${family} !important;
     }
